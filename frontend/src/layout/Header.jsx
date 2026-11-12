@@ -73,10 +73,12 @@ const Header = () => {
     const allRoles = user?.role ? user.role.split(',').map(r => r.trim()) : [];
     const getTargetRole = () => {
         const current = (activeRole || '').toLowerCase().trim();
-        // If we have admin/approver combo, prioritize switching between them
-        if (allRoles.includes('admin') && allRoles.includes('approver')) {
-            if (current === 'admin') return 'approver';
-            if (current === 'approver') return 'admin';
+        // If we have admin paired with AP USER or AP APPROVER, prioritize switching between them
+        const hasAdmin = allRoles.some(r => r.toLowerCase() === 'admin');
+        const secondaryRole = allRoles.find(r => r.toLowerCase() !== 'admin');
+        if (hasAdmin && secondaryRole) {
+            if (current === 'admin') return secondaryRole;
+            return allRoles.find(r => r.toLowerCase() === 'admin') || 'admin';
         }
         // General logic for other combinations: find the first available role that is not the current one
         return allRoles.find(r => r.toLowerCase().trim() !== current) || allRoles[0] || 'admin';
@@ -90,12 +92,12 @@ const Header = () => {
 
         let targetRoute = '/dashboard';
         const role = targetRole.toLowerCase();
-        if (role === 'scanner') {
-            targetRoute = '/invoices';
-        } else if (role === 'coder') {
-            targetRoute = '/coding';
-        } else if (role === 'approver') {
+        if (role === 'admin') {
+            targetRoute = '/dashboard';
+        } else if (role.includes('approver')) {
             targetRoute = '/approvals';
+        } else if (role.includes('user') || role === 'coder') {
+            targetRoute = '/invoices';
         }
 
         navigate(targetRoute);
@@ -126,13 +128,18 @@ const Header = () => {
                 const roles = nav.roles || [];
                 const roleAccess = roles.some(r => r.toLowerCase() === 'all' || r.toLowerCase() === currentRole);
 
-                // Show Master Data and Settings for scanner and coder as well
-                if ((nav.label === 'Master Data' || nav.label === 'Settings') && (currentRole === 'scanner' || currentRole === 'coder')) {
+                // Show Master Data and Settings for scanner, coder, and user roles as well
+                if ((nav.label === 'Master Data' || nav.label === 'Settings') && (currentRole === 'scanner' || currentRole === 'coder' || currentRole.includes('user'))) {
                     return true;
                 }
 
+                // Do not display Approvals tab for admin
+                if (nav.label === 'Approvals' && currentRole === 'admin') {
+                    return false;
+                }
+
                 // Specific block: non-finance approvers cannot see dashboard
-                if (nav.label === 'Dashboard' && currentRole === 'approver' && userDept === 'non-finance') {
+                if (nav.label === 'Dashboard' && currentRole.includes('approver') && userDept === 'non-finance') {
                     return false;
                 }
 

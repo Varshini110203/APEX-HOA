@@ -120,7 +120,7 @@ async def register(user: UserPydantic, background_tasks: BackgroundTasks, db: Se
         "email": user.email,
         "password": hashed_password,
         "status": "pending",
-        "role": "coder",
+        "role": "HOA USER",
         "department": user.department or "finance team",
         "isCreatedByUser": True,
         "createdby": "self",

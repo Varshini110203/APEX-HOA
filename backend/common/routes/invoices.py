@@ -892,7 +892,7 @@ async def get_invoices(
     user_roles = [r.strip().lower() for r in (current_user.role or "user").split(",")]
     is_finance_user = "finance" in user_dept and "non" not in user_dept
     is_admin = "admin" in user_roles
-    is_coder = "coder" in user_roles
+    is_coder = any(r in ["hoa user", "ap user", "ar user", "hoa_user", "ap_user", "ar_user", "coder"] for r in user_roles) or any("user" in r for r in user_roles)
     is_scanner = "scanner" in user_roles
 
     if is_finance_user or is_admin or is_coder or is_scanner:
@@ -1271,7 +1271,7 @@ async def get_invoice_filter_options(
     user_roles = [r.strip().lower() for r in (current_user.role or "user").split(",")]
     is_finance_user = "finance" in user_dept and "non" not in user_dept
     is_admin = "admin" in user_roles
-    is_coder = "coder" in user_roles
+    is_coder = any(r in ["hoa user", "ap user", "ar user", "hoa_user", "ap_user", "ar_user", "coder"] for r in user_roles) or any("user" in r for r in user_roles)
     is_scanner = "scanner" in user_roles
     
     # Get active delegations for current level logic
@@ -4335,10 +4335,11 @@ async def add_attachments(
     entity: str = Depends(get_current_entity),
     db: Session = Depends(get_db)
 ):
-    # Only scanner, coder, and admin can upload attachments
+    # Only authorized roles can upload attachments
     user_roles = [r.strip().lower() for r in (current_user.role or "user").split(",")]
-    if not any(r in ["scanner", "coder", "admin"] for r in user_roles):
-        raise HTTPException(status_code=403, detail="Permission denied. Only scanners, coders, and admins can add attachments.")
+    allowed_roles = ["admin", "hoa user", "ap user", "ar user", "hoa approver", "ap approver", "scanner", "coder"]
+    if not (any(r in allowed_roles for r in user_roles) or any("user" in r or "approver" in r for r in user_roles)):
+        raise HTTPException(status_code=403, detail="Permission denied. Only authorized roles can add attachments.")
 
     invoice = invoice_repo.get(db, invoice_id)
     if not invoice or invoice.entity != entity:
@@ -4412,10 +4413,11 @@ async def delete_attachment(
     entity: str = Depends(get_current_entity),
     db: Session = Depends(get_db)
 ):
-    # Only scanner, coder, and admin can delete attachments
+    # Only authorized roles can delete attachments
     user_roles = [r.strip().lower() for r in (current_user.role or "user").split(",")]
-    if not any(r in ["scanner", "coder", "admin"] for r in user_roles):
-        raise HTTPException(status_code=403, detail="Permission denied. Only scanners, coders, and admins can delete attachments.")
+    allowed_roles = ["admin", "hoa user", "ap user", "ar user", "hoa approver", "ap approver", "scanner", "coder"]
+    if not (any(r in allowed_roles for r in user_roles) or any("user" in r or "approver" in r for r in user_roles)):
+        raise HTTPException(status_code=403, detail="Permission denied. Only authorized roles can delete attachments.")
 
     invoice = invoice_repo.get(db, invoice_id)
     if not invoice or invoice.entity != entity:

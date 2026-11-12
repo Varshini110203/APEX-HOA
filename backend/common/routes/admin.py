@@ -21,7 +21,8 @@ class UserRoleUpdate(BaseModel):
 
 # Helper to check if user is admin
 def get_current_admin(current_user: UserResponse = Depends(get_current_user)):
-    if current_user.role != "admin": 
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    if "admin" not in user_roles: 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required"
@@ -132,14 +133,29 @@ async def update_user_role(
     allowed_roles = settings.get("roles", [])
     allowed_statuses = settings.get("statuses", [])
 
-    # Validate role(s)
+    # Validate role(s) case-insensitively
+    allowed_roles_map = {r.strip().lower(): r.strip() for r in allowed_roles}
     roles_to_validate = [r.strip() for r in update_data.role.split(',')]
+    canonical_roles = []
     for r in roles_to_validate:
-        if r not in allowed_roles:
+        if r.lower() not in allowed_roles_map:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid role: {r}"
             )
+        canonical_roles.append(allowed_roles_map[r.lower()])
+    
+    # Enforce multi-role constraint: only admin can be combined with either AP USER or AP APPROVER
+    if len(canonical_roles) > 1:
+        has_admin = any(r.lower() == "admin" for r in canonical_roles)
+        other_roles = [r for r in canonical_roles if r.lower() != "admin"]
+        if not has_admin or len(other_roles) > 1 or other_roles[0].lower() not in ["ap user", "ap approver"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Admin can only have multiple roles combined with either AP USER or AP APPROVER."
+            )
+
+    resolved_role = ",".join(canonical_roles)
 
     # Validate status
     if update_data.status not in allowed_statuses:
@@ -162,7 +178,7 @@ async def update_user_role(
 
     old_status = user.status
     user_repo.update(db, db_obj=user, obj_in={
-        "role": update_data.role,
+        "role": resolved_role,
         "status": update_data.status,
         "department": update_data.department
     })

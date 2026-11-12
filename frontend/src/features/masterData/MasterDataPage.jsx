@@ -25,7 +25,7 @@ import { getERPSystem } from '../../utils/envHelper';
 const MasterDataPage = () => {
     const user = useAuthStore((state) => state.user);
     const userRole = user?.role?.toLowerCase() || '';
-    const isReadOnly = userRole === 'scanner' || userRole === 'coder';
+    const isReadOnly = userRole === 'scanner' || userRole === 'coder' || userRole.includes('user') || userRole.includes('approver');
 
     const {
         activeTab, setActiveTab,

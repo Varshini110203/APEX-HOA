@@ -159,16 +159,15 @@ def create_default_currencies(db):
 
 
 def create_default_settings(db):
-    """Create default global settings if not exists"""
+    """Create or update default global settings with new roles"""
     default_settings = {
-        "roles": ["admin", "coder", "approver", "scanner"],
+        "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"],
         "statuses": ["active", "pending", "rejected"],
         "navigation": [
             {"label": "Dashboard", "path": "/dashboard", "roles": ["all"]},
-            {"label": "Invoices", "path": "/invoices", "roles": ["coder", "approver", "scanner"]},
-            {"label": "Coding", "path": "/coding", "roles": ["coder"]},
-            {"label": "Approvals", "path": "/approvals", "roles": ["approver"]},
-            {"label": "Master Data", "path": "/master-data", "roles": ["admin","scanner","coder"]},
+            {"label": "Invoices", "path": "/invoices", "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]},
+            {"label": "Approvals", "path": "/approvals", "roles": ["HOA APPROVER", "AP APPROVER"]},
+            {"label": "Master Data", "path": "/master-data", "roles": ["admin"]},
             {"label": "Settings", "path": "/settings", "roles": ["admin"]},
             {"label": "Admin", "path": "/admin", "roles": ["admin"]}
         ]
@@ -188,7 +187,11 @@ def create_default_settings(db):
         db.commit()
         print("SUCCESS: Default global settings created")
     else:
-        print("SUCCESS: Global settings already exist")
+        # Overwrite existing global settings to ensure old coder/approver roles are replaced
+        existing_setting.setting_value = json.dumps(default_settings)
+        existing_setting.updated_at = datetime.utcnow()
+        db.commit()
+        print("SUCCESS: Global settings updated with new roles (HOA USER, HOA APPROVER, AP USER, AP APPROVER, AR USER, admin)")
 
 
 def create_default_entity(db):

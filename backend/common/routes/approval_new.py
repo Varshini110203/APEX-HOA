@@ -2441,10 +2441,11 @@ async def recall_invoice(
 
     _check_concurrency(db, invoice, request.last_updated_at, current_user)
 
-    # Strictly Coder check
+    # Strictly invoice user/creator check
     user_role = (current_user.role or "").lower()
-    if "coder" not in user_role:
-        raise HTTPException(status_code=403, detail="Only Coders can recall invoices.")
+    allowed_recall_roles = ["hoa user", "ap user", "ar user", "hoa_user", "ap_user", "ar_user", "coder", "admin"]
+    if not (any(r in user_role for r in allowed_recall_roles) or "user" in user_role):
+        raise HTTPException(status_code=403, detail="Only authorized users can recall invoices.")
 
     # Status check: strictly waiting_approval
     if invoice.status != InvoiceStatus.WAITING_APPROVAL:

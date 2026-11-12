@@ -617,9 +617,9 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                     )}
                     {!activeInvoiceData?.is_archived && (
                         <>
-                            {/* ── Scanner / Coder buttons ───────────────────────── */}
-                            {((["scanner", "coder"].some(r => userRole.includes(r)) && (currentStatus || "").toLowerCase() === "processed") ||
-                                (userRole.includes("coder") && (currentStatus || "").toLowerCase() === "waiting_coding")) && (
+                            {/* ── User / Scanner buttons ───────────────────────── */}
+                            {((["scanner", "coder"].some(r => userRole.includes(r)) || userRole.includes("user")) && (currentStatus || "").toLowerCase() === "processed" ||
+                                ((userRole.includes("coder") || userRole.includes("user")) && (currentStatus || "").toLowerCase() === "waiting_coding")) && (
                                     <>
                                         <div className="w-[130px]">
                                             <CustomButton
@@ -814,8 +814,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                 </>
                             )}
 
-                            {/* Recall (Coder only, if level 1) */}
-                            {userRole.includes("coder") &&
+                            {/* Recall (Invoice User only, if level 1) */}
+                            {(userRole.includes("coder") || userRole.includes("user")) &&
                                 (currentStatus || "").toLowerCase().includes("waiting_approval") &&
                                 (workflowData?.current_approver_level === 1 || !workflowData) && (
                                     <button
@@ -870,7 +870,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                         {modal.action === "rework" && (
                             <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-700">
                                 {uiStatus?.current_level === 1
-                                    ? "The invoice will be sent back to the coder for coding."
+                                    ? "The invoice will be sent back for coding."
                                     : "The invoice will be sent back to the previous Finance Team approver for corrections."}
                             </div>
                         )}

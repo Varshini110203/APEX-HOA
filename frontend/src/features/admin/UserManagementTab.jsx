@@ -40,6 +40,16 @@ const UserManagementTab = ({ onEdit }) => {
     const getRoleStyles = (role) => {
         switch (role?.toLowerCase()) {
             case 'admin': return 'border-[#4ade80] text-[#4ade80] bg-[#4ade80]/5';
+            case 'hoa user':
+            case 'hoa_user': return 'border-[#06b6d4] text-[#06b6d4] bg-[#06b6d4]/5';
+            case 'hoa approver':
+            case 'hoa_approver': return 'border-[#8b5cf6] text-[#8b5cf6] bg-[#8b5cf6]/5';
+            case 'ap user':
+            case 'ap_user': return 'border-[#3b82f6] text-[#3b82f6] bg-[#3b82f6]/5';
+            case 'ap approver':
+            case 'ap_approver': return 'border-[#ec4899] text-[#ec4899] bg-[#ec4899]/5';
+            case 'ar user':
+            case 'ar_user': return 'border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5';
             case 'coder': return 'border-[#2dd4bf] text-[#2dd4bf] bg-[#2dd4bf]/5';
             case 'approver': return 'border-[#c084fc] text-[#c084fc] bg-[#c084fc]/5';
             case 'scanner': return 'border-[#60a5fa] text-[#60a5fa] bg-[#60a5fa]/5';

@@ -4,11 +4,12 @@ import Dropdown from '../../../components/ui/Dropdown';
 import { X } from 'lucide-react';
 
 const AddUserModal = ({ isOpen, onClose, onAdd, roles = [], isUpdating }) => {
+    const defaultRole = roles && roles.length > 0 ? roles[0] : 'HOA USER';
     const [form, setForm] = useState({ 
         username: '', 
         email: '', 
         password: 'Apex2026', 
-        role: 'approver', 
+        role: defaultRole, 
         department: '',
         status: 'active'
     });
@@ -20,13 +21,13 @@ const AddUserModal = ({ isOpen, onClose, onAdd, roles = [], isUpdating }) => {
                 username: '', 
                 email: '', 
                 password: 'Apex2026', 
-                role: 'approver', 
+                role: roles && roles.length > 0 ? roles[0] : 'HOA USER', 
                 department: '',
                 status: 'active'
             });
             setErrors({});
         }
-    }, [isOpen]);
+    }, [isOpen, roles]);
 
     if (!isOpen) return null;
 
@@ -47,7 +48,7 @@ const AddUserModal = ({ isOpen, onClose, onAdd, roles = [], isUpdating }) => {
         return Object.keys(newErrors).length === 0;
     };
 
-    const roleOptions = roles?.map(r => ({ label: r.charAt(0).toUpperCase() + r.slice(1), value: r }));
+    const roleOptions = roles?.map(r => ({ label: r.toUpperCase() === r ? r : r.charAt(0).toUpperCase() + r.slice(1), value: r }));
 
     const handleSubmit = (e) => {
         e.preventDefault();

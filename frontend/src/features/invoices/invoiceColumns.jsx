@@ -129,11 +129,12 @@ const actionsCol = (onView, onDelete, onArchive, userRole, openingInvoiceId, hid
     accessor: "actions",
     sortable: false,
     render: (_, row) => {
-        const allowedRoles = ["scanner", "coder"];
+        const allowedRoles = ["scanner", "coder", "admin", "hoa user", "ap user", "ar user"];
         const currentRole = userRole?.toLowerCase();
-        const canDelete = allowedRoles.includes(currentRole) && row.status !== 'sage_posted' && !hideDelete;
+        const isUserOrScanner = allowedRoles.includes(currentRole) || (currentRole && currentRole.includes('user'));
+        const canDelete = isUserOrScanner && row.status !== 'sage_posted' && !hideDelete;
         const isOpening = openingInvoiceId != null && String(openingInvoiceId) === String(row?.id);
-        const canArchive = allowedRoles.includes(currentRole) && row.status === 'sage_posted';
+        const canArchive = isUserOrScanner && row.status === 'sage_posted';
 
         return (
             <div className="flex items-center justify-center gap-3">

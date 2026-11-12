@@ -67,7 +67,7 @@ const SelectEntityPage = () => {
   const userRoles = user?.role ? user.role.split(',') : [];
   const hasMultipleRoles = userRoles.length > 1;
   const [activeRole, setLocalActiveRole] = useState(
-    sessionStorage.getItem('active_role') || userRoles[0] || 'approver'
+    sessionStorage.getItem('active_role') || userRoles[0] || 'HOA USER'
   );
   const [isRoleSelectOpen, setIsRoleSelectOpen] = useState(false);
 
@@ -134,10 +134,10 @@ const SelectEntityPage = () => {
 
     if (roleForRouting === 'scanner') {
       targetRoute = "/invoices";
-    } else if (roleForRouting === 'coder') {
-      targetRoute = "/coding";
-    } else if (roleForRouting === 'approver') {
+    } else if (roleForRouting.includes('approver')) {
       targetRoute = "/approvals";
+    } else if (roleForRouting.includes('user') || roleForRouting === 'coder') {
+      targetRoute = "/invoices";
     }
 
     navigate(targetRoute);

@@ -94,11 +94,11 @@ const useAdminStore = create((set, get) => ({
 
     addRole: async (roleName) => {
         const { statuses, roles, navigation } = get();
-        const lowerRole = roleName.toLowerCase();
-        if (roles.includes(lowerRole)) return false;
+        const trimmed = roleName.trim();
+        if (roles.some(r => r.toLowerCase() === trimmed.toLowerCase())) return false;
         
         const newSettings = {
-            roles: [...roles, lowerRole],
+            roles: [...roles, trimmed],
             statuses,
             navigation
         };
@@ -109,12 +109,12 @@ const useAdminStore = create((set, get) => ({
         const { statuses, roles, navigation } = get();
         const lowerRole = roleName.toLowerCase();
         const newSettings = {
-            roles: roles.filter(r => r !== lowerRole),
+            roles: roles.filter(r => r.toLowerCase() !== lowerRole),
             statuses,
             navigation: navigation.map(nav => ({
                 ...nav,
-                roles: nav.roles.filter(r => r !== lowerRole)
-            })).filter(nav => nav.roles.length > 0 || nav.roles.includes('all'))
+                roles: nav.roles.filter(r => r.toLowerCase() !== lowerRole)
+            })).filter(nav => nav.roles.length > 0 || nav.roles.some(r => r.toLowerCase() === 'all'))
         };
         return await get().updateSettings(newSettings);
     },
@@ -128,15 +128,16 @@ const useAdminStore = create((set, get) => ({
         const newNavigation = navigation.map(nav => {
             const hasAccess = accessibleLabels.includes(nav.label);
             let updatedRoles = [...nav.roles];
+            const alreadyHasRole = updatedRoles.some(r => r.toLowerCase() === lowerRole);
             
-            if (hasAccess && !updatedRoles.includes(lowerRole)) {
-                updatedRoles.push(lowerRole);
+            if (hasAccess && !alreadyHasRole) {
+                updatedRoles.push(roleName);
             } else if (!hasAccess) {
-                if (updatedRoles.includes(lowerRole)) {
-                    updatedRoles = updatedRoles.filter(r => r !== lowerRole);
-                } else if (updatedRoles.includes('all')) {
+                if (alreadyHasRole) {
+                    updatedRoles = updatedRoles.filter(r => r.toLowerCase() !== lowerRole);
+                } else if (updatedRoles.some(r => r.toLowerCase() === 'all')) {
                     // Expand 'all' into explicit roles before removing this one
-                    updatedRoles = roles.filter(r => r !== lowerRole);
+                    updatedRoles = roles.filter(r => r.toLowerCase() !== lowerRole);
                 }
             }
             

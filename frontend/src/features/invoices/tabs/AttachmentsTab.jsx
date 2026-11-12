@@ -35,7 +35,7 @@ const AttachmentsTab = () => {
     const [itemToDelete, setItemToDelete] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    const canModify = ["scanner", "coder", "admin"].includes(activeRole?.toLowerCase());
+    const canModify = ["scanner", "coder", "admin", "hoa user", "hoa approver", "ap user", "ap approver", "ar user"].includes(activeRole?.toLowerCase()) || activeRole?.toLowerCase()?.includes('user') || activeRole?.toLowerCase() === 'admin';
 
     const attachments = activeInvoiceData?.attachments || [];
 

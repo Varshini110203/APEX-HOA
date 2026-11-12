@@ -84,6 +84,10 @@ async def startup_event():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         print("✓ Database connection verified successfully")
+
+        # Synchronize global settings and users with new roles (HOA USER, HOA APPROVER, AP USER, AP APPROVER, AR USER, admin)
+        from common.utils.settings import sync_roles_and_settings
+        sync_roles_and_settings()
     except Exception as e:
         print(f"✗ Database connection failed: {e}")
         import traceback

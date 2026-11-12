@@ -393,14 +393,14 @@ const CodingTab = ({ isActive = false }) => {
             return status !== 'processed';
         }
 
-        if (userRole === 'coder') {
+        if (userRole === 'coder' || userRole.includes('user')) {
             if (status === 'waiting_approval') return true;
             if (status === 'waiting_coding' || status === 'processed') return false;
             return true;
         }
 
         // Approvers always view-only UNLESS editing session active (handled above)
-        if (userRole === 'approver') return true;
+        if (userRole === 'approver' || userRole.includes('approver')) return true;
 
         const VIEW_ONLY_STATUSES = ["waiting_coding", "processed", "sage_posted"];
         return VIEW_ONLY_STATUSES.includes(status);
@@ -779,7 +779,7 @@ const CodingTab = ({ isActive = false }) => {
                         >
                             <DownloadOutlined style={{ fontSize: 12 }} /> Export
                         </button>
-                        {userRole === "coder" && activeInvoiceData?.status?.toLowerCase() === "waiting_coding" && (
+                        {(userRole === "coder" || userRole.includes("user")) && activeInvoiceData?.status?.toLowerCase() === "waiting_coding" && (
                             <>
                                 <button
                                     onClick={() => fileInputRef.current.click()}

@@ -30,7 +30,7 @@ const SettingsPage = () => {
     } = useWorkflowStore();
 
     const { user, activeRole } = useAuthStore();
-    const isReadOnly = ['coder', 'scanner'].includes(activeRole?.toLowerCase());
+    const isReadOnly = ['coder', 'scanner'].includes(activeRole?.toLowerCase()) || activeRole?.toLowerCase()?.includes('user') || activeRole?.toLowerCase()?.includes('approver');
 
     const { showConfirm } = useToastStore();
     const [modalState, setModalState] = useState({ open: false, mode: 'add', rowData: null });
@@ -603,7 +603,7 @@ const ReminderSettingsForm = () => {
     const { reminderDays, updateReminderDays, fetchSettings, loading, isUpdating } = useAdminStore();
     const [inputValue, setInputValue] = useState(reminderDays);
     const { activeRole } = useAuthStore();
-    const isReadOnly = ['coder', 'scanner'].includes(activeRole?.toLowerCase());
+    const isReadOnly = ['coder', 'scanner'].includes(activeRole?.toLowerCase()) || activeRole?.toLowerCase()?.includes('user') || activeRole?.toLowerCase()?.includes('approver');
 
     useEffect(() => {
         fetchSettings();

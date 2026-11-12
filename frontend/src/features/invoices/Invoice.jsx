@@ -569,7 +569,7 @@ const Invoice = () => {
                                     <div style={{ width: "1px", height: "24px", background: "rgba(255,255,255,0.2)" }} />
 
                                     <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                                        {pageTab === 'in_progress' && ["scanner", "coder"].includes(userRole) && (
+                                        {pageTab === 'in_progress' && (["scanner", "coder"].includes(userRole) || userRole?.includes('user')) && (
                                             <Popconfirm
                                                 title="Delete Invoices"
                                                 description={`Are you sure you want to delete ${selectedInvoiceIds.length} invoices?`}
@@ -600,7 +600,7 @@ const Invoice = () => {
                                             </Popconfirm>
                                         )}
 
-                                        {pageTab === 'posted_stage' && ["scanner", "coder"].includes(userRole) && (
+                                        {pageTab === 'posted_stage' && (["scanner", "coder"].includes(userRole) || userRole?.includes('user')) && (
                                             <Popconfirm
                                                 title="Archive Invoices"
                                                 description={`Are you sure you want to archive ${selectedInvoiceIds.length} invoices?`}
@@ -677,7 +677,7 @@ const Invoice = () => {
                                                 enableColumnFilters={true}
                                                 columnFilters={columnFilters}
                                                 onColumnFiltersChange={setColumnFilters}
-                                                selectable={(pageTab === 'in_progress' || pageTab === 'posted_stage') && ["scanner", "coder"].includes(userRole)}
+                                                selectable={(pageTab === 'in_progress' || pageTab === 'posted_stage') && (["scanner", "coder"].includes(userRole) || userRole?.includes('user'))}
                                                 selectedRows={selectedInvoiceIds}
                                                 onSelectionChange={setSelectedInvoiceIds}
                                                 transparent={true}

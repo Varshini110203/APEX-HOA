@@ -16,7 +16,8 @@ async def get_settings(db: Session = Depends(get_db)):
 
 @router.put("/")
 async def update_settings(payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role != "admin":
+    user_roles = [r.strip().lower() for r in (user.role or "").split(",")]
+    if "admin" not in user_roles:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Get current settings to check for removed statuses
@@ -39,6 +40,14 @@ async def update_settings(payload: dict, user=Depends(get_current_user), db: Ses
     new_roles = payload.get("roles", [])
     removed_roles = [r for r in old_roles if r not in new_roles]
     for role in removed_roles:
+        if role.lower() in ["coder", "approver"]:
+            # Auto-migrate any remaining legacy users
+            target_role = "HOA USER" if role.lower() == "coder" else "HOA APPROVER"
+            legacy_users = db.query(User).filter(User.role.ilike(role)).all()
+            for u in legacy_users:
+                u.role = target_role
+            db.commit()
+            continue
         user_in_use_role_list = user_repo.get_multi(db, filters={"role": role}, limit=1)
         if user_in_use_role_list:
             raise HTTPException(

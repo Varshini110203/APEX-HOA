@@ -20,7 +20,7 @@ const AdminPage = () => {
     const [editingUser, setEditingUser] = useState(null);
     const [editForm, setEditForm] = useState({ role: [], status: '', department: '' });
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [addForm, setAddForm] = useState({ username: '', email: '', password: '', role: ['approver'], department: '' });
+    const [addForm, setAddForm] = useState({ username: '', email: '', password: '', role: ['HOA USER'], department: '' });
 
     const {
         searchQuery, setSearchQuery, setCurrentPage,
@@ -29,7 +29,7 @@ const AdminPage = () => {
     } = useAdminStore();
 
     // Use dynamic options from store
-    const roleOptions = roles?.map(r => ({ label: r.charAt(0).toUpperCase() + r.slice(1), value: r }));
+    const roleOptions = roles?.map(r => ({ label: r.toUpperCase() === r ? r : r.charAt(0).toUpperCase() + r.slice(1), value: r }));
     const statusOptions = statuses?.map(s => ({ label: s.charAt(0).toUpperCase() + s.slice(1), value: s }));
 
     const { user } = useAuthStore();
@@ -47,8 +47,6 @@ const AdminPage = () => {
     }, [activeTab, tabs, setActiveTab]);
 
     const handleRoleLogic = (newSelectedRoles, previousRoles) => {
-        const multiRoles = ['admin', 'approver'];
-
         // If a role was removed, just return the new list
         if (newSelectedRoles.length < previousRoles.length) {
             return newSelectedRoles;
@@ -58,14 +56,42 @@ const AdminPage = () => {
         const addedRole = newSelectedRoles.find(r => !previousRoles.includes(r));
         if (!addedRole) return newSelectedRoles;
 
-        // Logic check
-        if (multiRoles.includes(addedRole)) {
-            // If added role is admin or approver, keep only multiRoles
-            return newSelectedRoles.filter(r => multiRoles.includes(r));
-        } else {
-            // If added role is any other, it becomes single-select
+        const isApUser = (r) => r.toLowerCase().replace(/_/g, ' ').trim() === 'ap user';
+        const isApApprover = (r) => r.toLowerCase().replace(/_/g, ' ').trim() === 'ap approver';
+        const isAdmin = (r) => r.toLowerCase().trim() === 'admin';
+
+        // Case 1: Added role is 'admin'
+        if (isAdmin(addedRole)) {
+            // Admin can be paired with either AP USER or AP APPROVER
+            const existingAp = previousRoles.find(r => isApUser(r) || isApApprover(r));
+            if (existingAp) {
+                return [addedRole, existingAp];
+            }
             return [addedRole];
         }
+
+        // Case 2: Added role is 'AP USER'
+        if (isApUser(addedRole)) {
+            const hasAdmin = previousRoles.some(r => isAdmin(r));
+            if (hasAdmin) {
+                const adminRole = previousRoles.find(r => isAdmin(r));
+                return [adminRole, addedRole];
+            }
+            return [addedRole];
+        }
+
+        // Case 3: Added role is 'AP APPROVER'
+        if (isApApprover(addedRole)) {
+            const hasAdmin = previousRoles.some(r => isAdmin(r));
+            if (hasAdmin) {
+                const adminRole = previousRoles.find(r => isAdmin(r));
+                return [adminRole, addedRole];
+            }
+            return [addedRole];
+        }
+
+        // Case 4: Any other role (HOA USER, HOA APPROVER, AR USER, etc.) is single-select
+        return [addedRole];
     };
 
     const handleEditClick = (user) => {

@@ -73,7 +73,7 @@ const LoginPage = () => {
                 } else {
                         // Set the active role (similar to SelectEntityPage default behavior)
                         const userRoles = userObj.role ? userObj.role.split(',').map(r => r.trim()) : [];
-                        const activeRole = sessionStorage.getItem('active_role') || userRoles[0] || 'approver';
+                        const activeRole = sessionStorage.getItem('active_role') || userRoles[0] || 'HOA USER';
                         useAuthStore.getState().setActiveRole(activeRole);
 
                         if (getERPSystem() === 'Zoho' && userRoles.length <= 1) {

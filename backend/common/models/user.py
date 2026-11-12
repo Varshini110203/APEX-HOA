@@ -6,7 +6,7 @@ class User(BaseModel):
     username: str
     email: EmailStr
     password: str
-    role: str = "user"  # admin, coder, approver, user
+    role: str = "HOA USER"  # admin, HOA USER, HOA APPROVER, AP USER, AP APPROVER, AR USER
     status: str = "pending"  # pending, active, rejected
     department: Optional[str] = None
     email_notifications: bool = True

@@ -25,7 +25,8 @@ async def create_delegation(
     if delegation.original_approver.lower() == delegation.substitute_approver.lower():
         raise HTTPException(400, "Original approver and substitute approver cannot be the same.")
     
-    if current_user.role != "admin" and current_user.email.lower() != delegation.original_approver.lower():
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    if "admin" not in user_roles and current_user.email.lower() != delegation.original_approver.lower():
         raise HTTPException(403, "You do not have permission to delegate this user's approvals.")
 
     # Overlap validation: s1 <= e2 AND e1 >= s2
@@ -111,7 +112,8 @@ async def delete_delegation(
     
     print(f"DEBUG REVERT: User={current_user.email} Role={current_user.role} CreatedBy={delegation.created_by} Orig={delegation.original_approver}")
 
-    if current_user.role != "admin" and \
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    if "admin" not in user_roles and \
        current_user.email.lower() != (delegation.created_by or "").lower() and \
        current_user.email.lower() != (delegation.original_approver or "").lower():
         raise HTTPException(403, "You do not have permission to revert this delegation.")

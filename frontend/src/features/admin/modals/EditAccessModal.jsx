@@ -16,7 +16,7 @@ const EditAccessModal = ({ roleName, onClose }) => {
     
     // Get currently selected labels for this role
     const initialSelected = navigation
-        .filter(nav => nav.roles.includes('all') || nav.roles.includes(roleName.toLowerCase()))
+        .filter(nav => (nav.roles || []).some(r => r.toLowerCase() === 'all' || r.toLowerCase() === roleName.toLowerCase()))
         .map(nav => nav.label);
         
     const [selectedLabels, setSelectedLabels] = useState(initialSelected);

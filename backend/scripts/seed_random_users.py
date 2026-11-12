@@ -13,17 +13,23 @@ from common.auth.jwt import get_password_hash
 def seed_users():
     db = SessionLocal()
     try:
-        roles = ["admin", "coder", "approver", "scanner"]
+        # Remove deprecated coder and approver users
+        deleted_count = db.query(User).filter(User.role.in_(["coder", "approver"])).delete(synchronize_session=False)
+        if deleted_count:
+            print(f"Removed {deleted_count} deprecated coder/approver users.")
+
+        roles = ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]
         count_per_role = 5
         common_password_hash = get_password_hash("Lokesh@2001")
 
         print("Seeding users...")
 
         for role in roles:
+            slug = role.lower().replace(" ", "_")
             print(f"Creating {count_per_role} {role}s...")
 
             for i in range(1, count_per_role + 1):
-                username = f"{role}_{i}"
+                username = f"{slug}_{i}"
                 email = f"{username}@gmail.com"
 
                 # Check if user already exists

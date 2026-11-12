@@ -61,8 +61,8 @@ class User(Base):
     username = Column(String(100), nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     password = Column(String(255), nullable=False)
-    # admin, coder, approver
-    role = Column(String(50), nullable=False, default="coder")
+    # admin, HOA USER, HOA APPROVER, AP USER, AP APPROVER, AR USER
+    role = Column(String(50), nullable=False, default="HOA USER")
     # pending, active, rejected
     status = Column(String(50), nullable=False, default="pending")
     department = Column(String(100), nullable=False,

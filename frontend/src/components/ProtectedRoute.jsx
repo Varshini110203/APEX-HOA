@@ -37,8 +37,13 @@ const ProtectedRoute = () => {
         const userActiveRole = activeRole ? activeRole.toLowerCase() : (user?.role?.split(',')[0]?.trim()?.toLowerCase() || '');
         const userDept = user?.department?.toLowerCase() || '';
 
+        // Do not allow admin to access approvals route
+        if (currentPath.startsWith('/approvals') && userActiveRole === 'admin') {
+            return <Navigate to="/dashboard" replace />;
+        }
+
         // Specific block: non-finance approvers cannot see dashboard
-        if (currentPath === '/dashboard' && userActiveRole === 'approver' && userDept === 'non-finance') {
+        if (currentPath === '/dashboard' && userActiveRole.includes('approver') && userDept === 'non-finance') {
             return <Navigate to="/invoices" replace />;
         }
         
@@ -53,14 +58,14 @@ const ProtectedRoute = () => {
                 r.toLowerCase() === 'all' || r.toLowerCase() === userActiveRole
             );
 
-            if ((navItem.path === '/master-data' || navItem.path === '/settings') && (userActiveRole === 'scanner' || userActiveRole === 'coder')) {
+            if ((navItem.path === '/master-data' || navItem.path === '/settings') && (userActiveRole === 'scanner' || userActiveRole === 'coder' || userActiveRole.includes('user'))) {
                 hasAccess = true;
             }
             
             if (!hasAccess) {
                 // If user doesn't have access, redirect to appropriate default route
                 if (currentPath !== '/dashboard') {
-                    if (userActiveRole === 'approver' && userDept === 'non-finance') {
+                    if (userActiveRole.includes('approver') && userDept === 'non-finance') {
                         return <Navigate to="/invoices" replace />;
                     }
                     return <Navigate to="/dashboard" replace />;

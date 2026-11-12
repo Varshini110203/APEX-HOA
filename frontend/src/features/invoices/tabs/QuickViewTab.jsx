@@ -924,14 +924,14 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
             return status !== 'processed';
         }
 
-        if (userRole === 'coder') {
+        if (userRole === 'coder' || userRole.includes('user')) {
             if (status === 'waiting_approval') return true;
             if (status === 'waiting_coding' || status === 'processed') return false;
             return true;
         }
 
         // All approvers are view-only unless editing session is active (handled above)
-        if (userRole === 'approver') return true;
+        if (userRole === 'approver' || userRole.includes('approver')) return true;
 
         const VIEW_ONLY_STATUSES = ["waiting_coding"];
         return VIEW_ONLY_STATUSES.includes(status);
@@ -1048,7 +1048,7 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
             >
                 <DownloadOutlined style={{ fontSize: 12 }} /> Export
             </button>
-            {userRole === "coder" && activeInvoiceData?.status?.toLowerCase() === "waiting_coding" && (
+            {(userRole === "coder" || userRole.includes("user")) && activeInvoiceData?.status?.toLowerCase() === "waiting_coding" && (
                 <>
                     <button
                         onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}
