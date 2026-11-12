@@ -118,6 +118,14 @@ export const useInvoiceStore = create((set, get) => ({
         tdsRate: "",
         tdsSection: "",
         lineGrouping: "",
+        anyFeeApplicable: "",
+        feeAmount: "",
+        expenseType: "",
+        paymentReference: "",
+        expenseCategory: "",
+        loanNumber: "",
+        vendorCode: "",
+        paymentTerm: "",
     },
 
     isDuplicate: false,
@@ -271,6 +279,17 @@ export const useInvoiceStore = create((set, get) => ({
             if (key === "totalAmount") updatedFormData.totalInvoiceAmount = value;
             if (key === "totalInvoiceAmount") updatedFormData.totalAmount = value;
 
+            // Sync vendorId and vendorCode
+            if (key === "vendorId") updatedFormData.vendorCode = value;
+            if (key === "vendorCode") updatedFormData.vendorId = value;
+
+            // Sync paymentTerms and paymentTerm
+            if (key === "paymentTerms") updatedFormData.paymentTerm = value;
+            if (key === "paymentTerm") updatedFormData.paymentTerms = value;
+
+            // Reset fee amount if fee applicable is No
+            if (key === "anyFeeApplicable" && value !== "Yes") updatedFormData.feeAmount = "";
+
             return { quickViewFormData: updatedFormData };
         }),
 
@@ -320,7 +339,16 @@ export const useInvoiceStore = create((set, get) => ({
 
             invoiceType: data.extracted_data?.invoice_details?.type?.value ?? "",
             poNumber: data.extracted_data?.invoice_details?.po_number?.value ?? "",
-            paymentMethod: data.extracted_data?.invoice_details?.payment_method?.value ?? "",
+            paymentMethod: data.payment_method ?? data.extracted_data?.invoice_details?.payment_method?.value ?? "",
+            paymentTerms: data.payment_terms ?? data.extracted_data?.invoice_details?.payment_terms?.value ?? "",
+            paymentTerm: data.payment_terms ?? data.payment_term ?? data.extracted_data?.invoice_details?.payment_term?.value ?? data.extracted_data?.invoice_details?.payment_terms?.value ?? "",
+            vendorCode: data.vendor_code ?? data.extracted_data?.vendor_info?.vendor_id?.value ?? data.vendor_id ?? "",
+            anyFeeApplicable: data.any_fee_applicable ?? data.extracted_data?.invoice_details?.any_fee_applicable?.value ?? data.extracted_data?.additional_info?.any_fee_applicable?.value ?? "",
+            feeAmount: data.fee_amount !== undefined && data.fee_amount !== null ? data.fee_amount : (data.extracted_data?.amounts?.fee_amount?.value ?? ""),
+            expenseType: data.expense_type ?? data.extracted_data?.invoice_details?.expense_type?.value ?? "",
+            paymentReference: data.payment_reference ?? data.extracted_data?.invoice_details?.payment_reference?.value ?? "",
+            expenseCategory: data.expense_category ?? data.extracted_data?.invoice_details?.expense_category?.value ?? "",
+            loanNumber: data.loan_number ?? data.extracted_data?.invoice_details?.loan_number?.value ?? data.extracted_data?.additional_info?.loan_number?.value ?? "",
             costCenter: data.extracted_data?.invoice_details?.cost_center?.value ?? "",
 
             serviceStartDate: data.extracted_data?.service_period?.start_date?.value ?? "",

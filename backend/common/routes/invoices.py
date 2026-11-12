@@ -657,6 +657,19 @@ async def upload_invoices(
             new_invoice.invoice_date = parse_date_safely(invoice_dt_val)
             new_invoice.due_date = parse_date_safely(due_dt_val)
 
+            # Populate HOA & payment columns
+            new_invoice.vendor_code = new_invoice.vendor_id
+            new_invoice.payment_terms = invoice_details.get("payment_terms", {}).get("value") or invoice_details.get("payment_term", {}).get("value")
+            new_invoice.payment_method = invoice_details.get("payment_method", {}).get("value")
+            new_invoice.payment_reference = invoice_details.get("payment_reference", {}).get("value")
+            new_invoice.expense_type = invoice_details.get("expense_type", {}).get("value")
+            new_invoice.expense_category = invoice_details.get("expense_category", {}).get("value")
+            new_invoice.loan_number = invoice_details.get("loan_number", {}).get("value")
+            new_invoice.any_fee_applicable = invoice_details.get("any_fee_applicable", {}).get("value")
+            fee_val = amounts.get("fee_amount", {}).get("value")
+            if fee_val is not None:
+                new_invoice.fee_amount = remove_currency_format(fee_val)
+
             task_db.commit()
 
             # ---- POST-EXTRACTION DUPLICATE CHECK (Fallback) ----
@@ -3099,13 +3112,35 @@ async def update_invoice(
         if posting_dt is not None:
             update_data["posting_date"] = parse_date_safely(posting_dt)
         # --- Amount Columns Sync ---
-        total_amt = extracted_data.get("amounts", {}).get("total_invoice_amount", {}).get("value")
-        amt_due = extracted_data.get("amounts", {}).get("amount_due", {}).get("value")
+        amounts = extracted_data.get("amounts", {})
+        total_amt = amounts.get("total_invoice_amount", {}).get("value")
+        amt_due = amounts.get("amount_due", {}).get("value")
 
         if total_amt is not None:
             update_data["total_amount"] = remove_currency_format(total_amt)
         if amt_due is not None:
             update_data["amount_due"] = remove_currency_format(amt_due)
+
+        # --- HOA & AP Fields Sync ---
+        inv_details = extracted_data.get("invoice_details", {})
+        if "vendor_code" not in update_data or not update_data["vendor_code"]:
+            update_data["vendor_code"] = new_vendor_id or invoice.vendor_id
+        if "payment_terms" not in update_data or not update_data["payment_terms"]:
+            update_data["payment_terms"] = inv_details.get("payment_terms", {}).get("value") or inv_details.get("payment_term", {}).get("value")
+        if "payment_method" not in update_data or not update_data["payment_method"]:
+            update_data["payment_method"] = inv_details.get("payment_method", {}).get("value")
+        if "any_fee_applicable" not in update_data or not update_data["any_fee_applicable"]:
+            update_data["any_fee_applicable"] = inv_details.get("any_fee_applicable", {}).get("value")
+        if "fee_amount" not in update_data or update_data["fee_amount"] is None:
+            update_data["fee_amount"] = amounts.get("fee_amount", {}).get("value")
+        if "expense_type" not in update_data or not update_data["expense_type"]:
+            update_data["expense_type"] = inv_details.get("expense_type", {}).get("value")
+        if "payment_reference" not in update_data or not update_data["payment_reference"]:
+            update_data["payment_reference"] = inv_details.get("payment_reference", {}).get("value")
+        if "expense_category" not in update_data or not update_data["expense_category"]:
+            update_data["expense_category"] = inv_details.get("expense_category", {}).get("value")
+        if "loan_number" not in update_data or not update_data["loan_number"]:
+            update_data["loan_number"] = inv_details.get("loan_number", {}).get("value")
 
         # Sanitize amounts in extracted_data as well
         if isinstance(extracted_data, dict) and "amounts" in extracted_data:
@@ -3213,13 +3248,19 @@ async def update_invoice(
 
     # Update attributes
     update_fields = [
-        "vendor_id", "vendor_name", "invoice_number", "reference_number", "status", 
+        "vendor_id", "vendor_code", "vendor_name", "invoice_number", "reference_number", "status", 
         "exchange_rate", "confidence_score", "total_amount", 
-        "amount_due", "invoice_date", "due_date", "posting_date"
+        "amount_due", "invoice_date", "due_date", "posting_date",
+        "payment_terms", "payment_method", "any_fee_applicable", "fee_amount",
+        "expense_type", "payment_reference", "expense_category", "loan_number"
     ]
     
+    # Process payment_term alias
+    if "payment_term" in update_data and not update_data.get("payment_terms"):
+        update_data["payment_terms"] = update_data["payment_term"]
+
     # Process potentially raw strings for financial and date fields
-    for field in ["exchange_rate", "total_amount", "amount_due"]:
+    for field in ["exchange_rate", "total_amount", "amount_due", "fee_amount"]:
         if field in update_data:
             update_data[field] = remove_currency_format(update_data[field])
             

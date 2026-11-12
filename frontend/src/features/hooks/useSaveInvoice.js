@@ -176,9 +176,15 @@ export const useSaveInvoice = () => {
                 currency: { ...activeInvoiceData.extracted_data?.invoice_details?.currency, value: f.invoiceCurrency },
                 type: { ...activeInvoiceData.extracted_data?.invoice_details?.type, value: f.invoiceType },
                 po_number: { ...activeInvoiceData.extracted_data?.invoice_details?.po_number, value: f.poNumber },
-                payment_terms: { ...activeInvoiceData.extracted_data?.invoice_details?.payment_terms, value: f.paymentTerms },
+                payment_terms: { ...activeInvoiceData.extracted_data?.invoice_details?.payment_terms, value: f.paymentTerms || f.paymentTerm },
+                payment_term: { ...activeInvoiceData.extracted_data?.invoice_details?.payment_term, value: f.paymentTerm || f.paymentTerms },
                 payment_method: { ...activeInvoiceData.extracted_data?.invoice_details?.payment_method, value: f.paymentMethod },
                 cost_center: { ...activeInvoiceData.extracted_data?.invoice_details?.cost_center, value: f.costCenter },
+                any_fee_applicable: { ...activeInvoiceData.extracted_data?.invoice_details?.any_fee_applicable, value: f.anyFeeApplicable },
+                expense_type: { ...activeInvoiceData.extracted_data?.invoice_details?.expense_type, value: f.expenseType },
+                payment_reference: { ...activeInvoiceData.extracted_data?.invoice_details?.payment_reference, value: f.paymentReference },
+                expense_category: { ...activeInvoiceData.extracted_data?.invoice_details?.expense_category, value: f.expenseCategory },
+                loan_number: { ...activeInvoiceData.extracted_data?.invoice_details?.loan_number, value: f.loanNumber },
             },
 
             service_period: {
@@ -204,6 +210,7 @@ export const useSaveInvoice = () => {
                 tds_rate: { ...activeInvoiceData.extracted_data?.amounts?.tds_rate, value: f.tdsRate },
                 tds_section: { ...activeInvoiceData.extracted_data?.amounts?.tds_section, value: f.tdsSection },
                 tds_deduction: { ...activeInvoiceData.extracted_data?.amounts?.tds_deduction, value: tdsDeductionValue },
+                fee_amount: { ...activeInvoiceData.extracted_data?.amounts?.fee_amount, value: f.feeAmount },
                 total_amount_payable: { ...activeInvoiceData.extracted_data?.amounts?.total_amount_payable, value: f.totalPayable },
                 // Persist user overrides so they survive reload
                 line_grouping: { value: f.lineGrouping ?? "" },
@@ -229,11 +236,21 @@ export const useSaveInvoice = () => {
         const payload = {
             ...activeInvoiceData,
             vendor_id: f.vendorId,
+            vendor_code: f.vendorCode || f.vendorId,
             vendor_name: f.vendorName,
             invoice_number: f.invoiceNumber,
             exchange_rate: f.exchangeRate || activeInvoiceData.exchange_rate,
             extracted_data: updatedExtractedData,
             posting_date: f.postingDate,
+            payment_terms: f.paymentTerms || f.paymentTerm,
+            payment_term: f.paymentTerm || f.paymentTerms,
+            payment_method: f.paymentMethod,
+            any_fee_applicable: f.anyFeeApplicable,
+            fee_amount: f.feeAmount ? parseFloat(f.feeAmount) : null,
+            expense_type: f.expenseType,
+            payment_reference: f.paymentReference,
+            expense_category: f.expenseCategory,
+            loan_number: f.loanNumber,
             last_updated_at: activeInvoiceData.updated_at
         };
 

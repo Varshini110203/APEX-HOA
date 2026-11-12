@@ -37,7 +37,8 @@ const CURRENCY_KEYS = [
     "shippingFees",
     "surcharges",
     "totalInvoiceAmount",
-    "amountDue"
+    "amountDue",
+    "feeAmount"
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,10 +115,23 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
     };
 
     const fieldContent = (() => {
-        if (field.key === "vendorId" || field.key === "vendorName") {
+        if (field.key === "vendorId" || field.key === "vendorCode") {
+            return (
+                <CustomInput
+                    {...commonProps}
+                    label={null}
+                    value={displayValue}
+                    disabled={true}
+                    placeholder="Auto-populated based on selected vendor"
+                    height="40px"
+                />
+            );
+        }
+
+        if (field.key === "vendorName") {
             const adaptedOptions = (vendorOptions || []).map(opt => ({
                 ...opt,
-                value: field.key === "vendorId" ? opt.vendorId : opt.vendorName
+                value: opt.vendorName
             }));
 
             return (
@@ -130,14 +144,14 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
                     onSelect={(val, option) => {
                         const id = option.vendorId;
                         const name = option.vendorName;
-                        setLocalValue(field.key === "vendorId" ? id : name);
+                        setLocalValue(name);
                         onVendorSelect(id, name);
                     }}
                     onChange={(val) => handleChange(val)}
                     onSearch={onSearch}
                     allowClear
                     loading={searchLoading}
-                    placeholder="Type to search vendor ID or name"
+                    placeholder="Type to search or enter vendor name"
                     notFoundContent={searchLoading ? <div className="p-2 flex justify-center"><Spin size="small" /></div> : null}
                 />
             );
@@ -565,8 +579,23 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
         if (!value) {
             setSearchedVendors([]);
             setSelectedVendorId(null);
+            setQuickViewField("vendorId", "");
+            setQuickViewField("vendorCode", "");
+        } else if (key === "vendorName") {
+            // Check if entered name matches any vendor in master data
+            masterDataService.getVendorMasterData({ search: value, page_size: 10 })
+                .then(res => {
+                    const data = res?.data || [];
+                    const exact = data.find(v => v.vendor_name?.toLowerCase() === value.trim().toLowerCase());
+                    if (exact) {
+                        setQuickViewField("vendorId", exact.vendor_id);
+                        setQuickViewField("vendorCode", exact.vendor_id);
+                        setSelectedVendorId(exact.vendor_id);
+                    }
+                })
+                .catch(() => {});
         }
-    }, [handleCommit, setSelectedVendorId]);
+    }, [handleCommit, setSelectedVendorId, setQuickViewField]);
     const [showCalcModal, setShowCalcModal] = useState(false);
 
     const prevVendorRef = useRef(null);
@@ -696,6 +725,7 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
 
     const handleVendorSelect = useCallback((vendorId, vendorName) => {
         setQuickViewField("vendorId", vendorId);
+        setQuickViewField("vendorCode", vendorId);
         setQuickViewField("vendorName", vendorName);
         setSelectedVendorId(vendorId);
     }, [setQuickViewField, setSelectedVendorId]);
@@ -1113,8 +1143,8 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                                                 }
                                                             }
                                                         } : {})}
-                                                        onCommit={field.key === "vendorId" || field.key === "vendorName" ? handleVendorFieldCommit : handleCommit}
-                                                        vendorOptions={(field.key === "vendorId" || field.key === "vendorName") ? vendorOptions : undefined}
+                                                        onCommit={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorFieldCommit : handleCommit}
+                                                        vendorOptions={(field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName") ? vendorOptions : undefined}
                                                         filterVendors={filterVendors}
                                                         onVendorSelect={handleVendorSelect}
                                                         onHover={handleHoverField}
@@ -1123,7 +1153,7 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                                         duplicateMessage={duplicateMessage}
                                                         isAmountMismatch={isAmountMismatch}
                                                         forceDisabled={isViewOnly}
-                                                        onSearch={field.key === "vendorId" || field.key === "vendorName" ? handleVendorSearch : undefined}
+                                                        onSearch={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorSearch : undefined}
                                                         searchLoading={isSearching}
                                                     />
                                                 )

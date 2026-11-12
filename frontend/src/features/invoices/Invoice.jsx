@@ -503,7 +503,7 @@ const Invoice = () => {
                                     className="!w-auto !h-10 px-4"
                                 />
                             </div>
-                            {['scanner', 'coder'].includes(userRole) && pageTab === 'in_progress' && (
+                            {(userRole === 'hoa user' || userRole === 'hoa_user' || userRole === 'hoa') && pageTab === 'in_progress' && (
                                 <div style={{ flexShrink: 0 }}>
                                     <CustomButton
                                         variant="primary"

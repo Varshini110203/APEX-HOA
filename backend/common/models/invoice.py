@@ -43,11 +43,20 @@ class InvoiceBase(BaseModel):
     vendor_name: Optional[str] = None
     invoice_number: Optional[str] = None
     reference_number: Optional[str] = None
+    vendor_code: Optional[str] = None
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
     posting_date: Optional[date] = None
     total_amount: Optional[float] = None
     amount_due: Optional[float] = None
+    payment_terms: Optional[str] = None
+    payment_method: Optional[str] = None
+    any_fee_applicable: Optional[str] = None
+    fee_amount: Optional[float] = None
+    expense_type: Optional[str] = None
+    payment_reference: Optional[str] = None
+    expense_category: Optional[str] = None
+    loan_number: Optional[str] = None
     last_modified_by: Optional[str] = None
     approver: Optional[str] = None
     attachments: Optional[Any] = None
@@ -67,9 +76,19 @@ class InvoiceUpdate(BaseModel):
     total_amount: Optional[Any] = None
     amount_due: Optional[Any] = None
     vendor_id: Optional[str] = None
+    vendor_code: Optional[str] = None
     vendor_name: Optional[str] = None
     invoice_number: Optional[str] = None
     reference_number: Optional[str] = None
+    payment_terms: Optional[str] = None
+    payment_term: Optional[str] = None
+    payment_method: Optional[str] = None
+    any_fee_applicable: Optional[str] = None
+    fee_amount: Optional[Any] = None
+    expense_type: Optional[str] = None
+    payment_reference: Optional[str] = None
+    expense_category: Optional[str] = None
+    loan_number: Optional[str] = None
     last_updated_at: Optional[datetime] = None
 
 class Invoice(InvoiceBase):
