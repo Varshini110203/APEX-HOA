@@ -546,9 +546,17 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
 
     const busy = (key) => actionLoading === key;
 
-    const isApproverView =
-        (userRole.includes("approver") || userRole === "admin") &&
-        ["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked", "sage_post_failed"].includes((currentStatus || "").toLowerCase());
+    const roleClean = (userRole || "").toLowerCase().trim();
+    const isHoaRole = roleClean.includes("hoa");
+    const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder")) && !isHoaRole;
+    const isApproverRole = roleClean.includes("approver");
+
+    const isAdmin = roleClean === "admin";
+    const isHoaApprover = isHoaRole && isApproverRole;
+    const isHoaUser = isHoaRole && !isApproverRole;
+    const isApApprover = isApRole && isApproverRole;
+    const isApUser = isApRole && !isApproverRole;
+
     const canAction = (key) => uiStatusReady && !!uiStatus?.[key] && !actionLoading;
 
     const btnBase =
@@ -629,43 +637,92 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                 </CustomButton>
                             </div>
 
-                            {/* ── HOA User buttons (processed / reworked) ───────────────────────── */}
-                            {((userRole.includes("hoa") || userRole.includes("user") || userRole === "admin") &&
-                                (currentStatus === "processed" || (currentStatus === "reworked" && !userRole.includes("ap")))) && (
-                                    <>
-                                        <div className="w-[130px]">
-                                            <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
-                                        </div>
-                                        <div className="w-[130px]">
-                                            <CustomButton
-                                                variant="primary"
-                                                height="h-[34px]"
-                                                disabled={!!actionLoading}
-                                                onClick={handleSaveInvoice}
-                                            >
-                                                {busy("saving") ? "Saving..." : "Save"}
-                                            </CustomButton>
-                                        </div>
-                                        <div className="w-[130px]">
-                                            <CustomButton
-                                                variant="success"
-                                                height="h-[34px]"
-                                                disabled={isDuplicate || !!actionLoading}
-                                                onClick={handleHoaSendToApproval}
-                                            >
-                                                {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
-                                            </CustomButton>
-                                        </div>
-                                    </>
-                                )}
+                            {/* ── Admin: ONLY Refresh & Delegate, nothing else ───────────────────── */}
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setShowDelegateModal(true)}
+                                    className={getBtnClass("blue", true)}
+                                >
+                                    Delegate
+                                </button>
+                            )}
+
+                            {/* ── HOA User buttons (processed / reworked to HOA) ─────────── */}
+                            {isHoaUser && (currentStatus === "processed" || currentStatus === "reworked") && (
+                                <>
+                                    <div className="w-[130px]">
+                                        <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
+                                    </div>
+                                    <div className="w-[130px]">
+                                        <CustomButton
+                                            variant="primary"
+                                            height="h-[34px]"
+                                            disabled={!!actionLoading}
+                                            onClick={handleSaveInvoice}
+                                        >
+                                            {busy("saving") ? "Saving..." : "Save"}
+                                        </CustomButton>
+                                    </div>
+                                    <div className="w-[130px]">
+                                        <CustomButton
+                                            variant="success"
+                                            height="h-[34px]"
+                                            disabled={isDuplicate || !!actionLoading}
+                                            onClick={handleHoaSendToApproval}
+                                        >
+                                            {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
+                                        </CustomButton>
+                                    </div>
+                                </>
+                            )}
 
                             {/* ── AP Coder buttons (waiting_coding) ───────────────────────── */}
-                            {((userRole.includes("coder") || userRole.includes("ap") || userRole.includes("user") || userRole === "admin") &&
-                                currentStatus === "waiting_coding") && (
-                                    <>
-                                        <div className="w-[130px]">
-                                            <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
-                                        </div>
+                            {isApUser && currentStatus === "waiting_coding" && (
+                                <>
+                                    <div className="w-[130px]">
+                                        <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
+                                    </div>
+                                    <div className="w-[130px]">
+                                        <CustomButton
+                                            variant="primary"
+                                            height="h-[34px]"
+                                            disabled={!!actionLoading}
+                                            onClick={handleSaveInvoice}
+                                        >
+                                            {busy("saving") ? "Saving..." : "Save"}
+                                        </CustomButton>
+                                    </div>
+                                    <div className="w-[130px]">
+                                        <CustomButton
+                                            variant="success"
+                                            height="h-[34px]"
+                                            disabled={
+                                                isDuplicate ||
+                                                !!actionLoading ||
+                                                isAmountMismatch
+                                            }
+                                            onClick={handleApSendToApproval}
+                                        >
+                                            {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
+                                        </CustomButton>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* ── HOA Approver buttons: ONLY at waiting_hoa_approval ───────── */}
+                            {isHoaApprover && currentStatus === "waiting_hoa_approval" && (
+                                <>
+                                    {!editingEnabled && (
+                                        <button
+                                            onClick={handleEnableEditing}
+                                            disabled={!canAction("can_enable_editing")}
+                                            className={getBtnClass("blue", canAction("can_enable_editing"))}
+                                        >
+                                            Enable Editing
+                                        </button>
+                                    )}
+
+                                    {editingEnabled && (
                                         <div className="w-[130px]">
                                             <CustomButton
                                                 variant="primary"
@@ -676,50 +733,49 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                 {busy("saving") ? "Saving..." : "Save"}
                                             </CustomButton>
                                         </div>
-                                        <div className="w-[130px]">
-                                            <CustomButton
-                                                variant="success"
-                                                height="h-[34px]"
-                                                disabled={
-                                                    isDuplicate ||
-                                                    !!actionLoading ||
-                                                    isAmountMismatch
-                                                }
-                                                onClick={handleApSendToApproval}
-                                            >
-                                                {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
-                                            </CustomButton>
-                                        </div>
-                                    </>
-                                )}
+                                    )}
 
-                            {/* ── Approver buttons ──────────────────────────────── */}
-                            {/* ── Admin-only buttons ───────────────────────────── */}
-                            {userRole === "admin" && ["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus) && (
-                                <>
                                     <button
-                                        onClick={() => setShowDelegateModal(true)}
-                                        className={getBtnClass("blue", true)}
+                                        onClick={() => openModal("rework")}
+                                        disabled={!canAction("can_rework")}
+                                        className={getBtnClass("yellow", canAction("can_rework"))}
                                     >
-                                        Delegate
+                                        {busy("rework") ? "Sending…" : "Rework"}
+                                    </button>
+
+                                    <button
+                                        onClick={() => openModal("reject")}
+                                        disabled={!canAction("can_reject")}
+                                        className={getBtnClass("red", canAction("can_reject"))}
+                                    >
+                                        {busy("reject") ? "Rejecting…" : "Reject"}
+                                    </button>
+
+                                    <button
+                                        onClick={() => openModal("approve")}
+                                        disabled={!canAction("can_approve")}
+                                        className={getBtnClass("green", canAction("can_approve"))}
+                                    >
+                                        {busy("approve") ? "Approving…" : "Approve"}
                                     </button>
                                 </>
                             )}
 
-                            {isApproverView && (
+                            {/* ── AP Approver buttons: ONLY at waiting_ap_approval / sage_post_failed ── */}
+                            {isApApprover && (
                                 <>
-                                    {/* Repost to Sage */}
                                     {currentStatus === "sage_post_failed" && (
-                                        <>
-                                            <button
-                                                onClick={() => openModal("repost-sage")}
-                                                disabled={!canAction("can_repost_sage")}
-                                                className={getBtnClass("orange", canAction("can_repost_sage"))}
-                                            >
-                                                {busy("repost-sage") ? "Reposting…" : "Repost"}
-                                            </button>
+                                        <button
+                                            onClick={() => openModal("repost-sage")}
+                                            disabled={!canAction("can_repost_sage")}
+                                            className={getBtnClass("orange", canAction("can_repost_sage"))}
+                                        >
+                                            {busy("repost-sage") ? "Reposting…" : "Repost"}
+                                        </button>
+                                    )}
 
-                                            {/* Enable Editing — always available when not in active edit session */}
+                                    {["waiting_ap_approval", "waiting_approval"].includes(currentStatus) && (
+                                        <>
                                             {!editingEnabled && (
                                                 <button
                                                     onClick={handleEnableEditing}
@@ -730,7 +786,6 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                 </button>
                                             )}
 
-                                            {/* Save — appears once editing is unlocked */}
                                             {editingEnabled && (
                                                 <div className="w-[130px]">
                                                     <CustomButton
@@ -743,37 +798,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                     </CustomButton>
                                                 </div>
                                             )}
-                                        </>
-                                    )}
 
-                                    {["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus) && (
-                                        <>
-                                            {/* Enable Editing — always available when not in active edit session */}
-                                            {!editingEnabled && (
-                                                <button
-                                                    onClick={handleEnableEditing}
-                                                    disabled={!canAction("can_enable_editing")}
-                                                    className={getBtnClass("blue", canAction("can_enable_editing"))}
-                                                >
-                                                    Enable Editing
-                                                </button>
-                                            )}
-
-                                            {/* Save — appears once editing is unlocked */}
-                                            {editingEnabled && (["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus)) && (
-                                                <div className="w-[130px]">
-                                                    <CustomButton
-                                                        variant="primary"
-                                                        height="h-[34px]"
-                                                        disabled={!!actionLoading}
-                                                        onClick={handleSaveInvoice}
-                                                    >
-                                                        {busy("saving") ? "Saving..." : "Save"}
-                                                    </CustomButton>
-                                                </div>
-                                            )}
-
-                                            {/* Rework */}
                                             <button
                                                 onClick={() => openModal("rework")}
                                                 disabled={!canAction("can_rework")}
@@ -782,7 +807,6 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                 {busy("rework") ? "Sending…" : "Rework"}
                                             </button>
 
-                                            {/* Reject */}
                                             <button
                                                 onClick={() => openModal("reject")}
                                                 disabled={!canAction("can_reject")}
@@ -791,7 +815,6 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                 {busy("reject") ? "Rejecting…" : "Reject"}
                                             </button>
 
-                                            {/* Approve */}
                                             <button
                                                 onClick={() => openModal("approve")}
                                                 disabled={!canAction("can_approve")}
@@ -799,33 +822,13 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                             >
                                                 {busy("approve") ? "Approving…" : "Approve"}
                                             </button>
-
-                                            {/* Info label */}
-                                            {(uiStatusLoading || !uiStatusReady) && (
-                                                <span className="text-xs text-gray-400 italic select-none">
-                                                    Checking permissions...
-                                                </span>
-                                            )}
-                                            {uiStatusReady && uiStatus &&
-                                                !uiStatus.can_approve &&
-                                                !uiStatus.can_reject &&
-                                                !uiStatus.can_rework &&
-                                                !uiStatus.can_enable_editing && (
-                                                    <span className="text-xs text-gray-400 italic select-none">
-                                                        {uiStatus.level_already_approved
-                                                            ? "Your level approved"
-                                                            : uiStatus.already_acted
-                                                                ? "Already acted"
-                                                                : "Awaiting approver"}
-                                                    </span>
-                                                )}
                                         </>
                                     )}
                                 </>
                             )}
 
-                            {/* Recall (Invoice User only, if level 1) */}
-                            {(userRole.includes("coder") || userRole.includes("user")) &&
+                            {/* Recall (AP Coder only, if level 1) */}
+                            {isApUser &&
                                 (currentStatus || "").toLowerCase().includes("waiting_approval") &&
                                 (workflowData?.current_approver_level === 1 || !workflowData) && (
                                     <button

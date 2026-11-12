@@ -1111,6 +1111,16 @@ def _get_rework_error(db: Session, current_level: int, assigned: List[Dict]) -> 
     return None
 
 
+def _is_hoa_approver(role_str: str) -> bool:
+    r = (role_str or "").lower().strip()
+    return "hoa" in r and "approver" in r
+
+
+def _is_ap_approver(role_str: str) -> bool:
+    r = (role_str or "").lower().strip()
+    return ("ap" in r.split() or "ap_approver" in r or "ap approver" in r) and "approver" in r and "hoa" not in r
+
+
 @router.post("/status", response_model=ApproverUIStatus)
 async def get_ui_status_from_frontend(
     payload: Dict = Body(...),
@@ -1136,9 +1146,33 @@ async def get_ui_status_from_frontend(
     email = current_user.email.lower()
     finance_users = _get_finance_users(db, entity)
     is_finance = email in [f.lower() for f in finance_users]
+    is_admin = user_role_lower == "admin"
+    is_hoa_approver = _is_hoa_approver(user_role_lower)
+    is_ap_approver = _is_ap_approver(user_role_lower)
+
+    if is_admin:
+        return ApproverUIStatus(
+            invoice_id=str(invoice_id),
+            current_status=current_status,
+            current_level=1,
+            workflow_type="admin",
+            can_approve=False,
+            can_reject=False,
+            can_rework=False,
+            can_enable_editing=False,
+            can_repost_sage=False,
+            is_posting_approver=False,
+            is_threshold_approver=False,
+            is_finance_team=False,
+            user_level=1,
+            level_already_approved=False,
+            already_acted=False,
+            assigned_approvers=[],
+            sage_post_error=None,
+            rework_error=None,
+        )
 
     if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
-        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
         return ApproverUIStatus(
             invoice_id=str(invoice_id),
             current_status=current_status,
@@ -1160,8 +1194,7 @@ async def get_ui_status_from_frontend(
             rework_error=None,
         )
 
-    if current_status == InvoiceStatus.WAITING_AP_APPROVAL and not assigned:
-        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or is_finance
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
         return ApproverUIStatus(
             invoice_id=str(invoice_id),
             current_status=current_status,
@@ -1174,7 +1207,7 @@ async def get_ui_status_from_frontend(
             can_repost_sage=False,
             is_posting_approver=is_ap_approver,
             is_threshold_approver=False,
-            is_finance_team=is_finance,
+            is_finance_team=False,
             user_level=1,
             level_already_approved=False,
             already_acted=False,
@@ -1449,7 +1482,7 @@ async def approve_invoice(
 
     # Step 7: HOA approver checks and approves
     if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
-        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        is_hoa_approver = _is_hoa_approver(user_role_lower)
         if not is_hoa_approver:
             raise HTTPException(403, "You are not authorized to approve at HOA stage")
 
@@ -1494,9 +1527,9 @@ async def approve_invoice(
     threshold_entries = [a for a in assigned if a.get("type") == "threshold"]
     posting_entries = [a for a in assigned if a.get("type") == "posting"]
 
-    # Step 10 fallback: If waiting_ap_approval and no complex approvers assigned, AP Approver approves and posts to Sage
-    if current_status == InvoiceStatus.WAITING_AP_APPROVAL and not mandatory and not threshold_entries and not posting_entries:
-        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or email in [f.lower() for f in finance_users]
+    # Step 10: AP Approver approves and posts to Sage
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
+        is_ap_approver = _is_ap_approver(user_role_lower)
         if not is_ap_approver:
             raise HTTPException(403, "You are not authorized to approve at AP stage")
 
@@ -2078,7 +2111,7 @@ async def reject_invoice(
     user_role_lower = (current_user.role or "").lower()
 
     if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
-        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        is_hoa_approver = _is_hoa_approver(user_role_lower)
         if not is_hoa_approver:
             raise HTTPException(403, "You are not authorized to reject this invoice at HOA stage")
         _update_invoice_status(db, invoice, InvoiceStatus.REJECTED)
@@ -2104,6 +2137,36 @@ async def reject_invoice(
         return ActionResponse(
             success=True,
             message="Invoice has been rejected by HOA Approver.",
+            new_status=InvoiceStatus.REJECTED,
+        )
+
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
+        is_ap_approver = _is_ap_approver(user_role_lower)
+        if not is_ap_approver:
+            raise HTTPException(403, "You are not authorized to reject this invoice at AP stage")
+        _update_invoice_status(db, invoice, InvoiceStatus.REJECTED)
+        invoice.current_approver_level = 1
+        invoice.approved_by_list = []
+        _record_step(
+            db, invoice_id,
+            step_name="Invoice Rejected by AP Approver",
+            step_type=StepType.REJECTED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+            approver_number=1,
+        )
+        await audit_service.log_action(
+            db=db, invoice_id=invoice_id,
+            action=AuditAction.REJECTED,
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment}
+        )
+        db.commit()
+        return ActionResponse(
+            success=True,
+            message="Invoice has been rejected by AP Approver.",
             new_status=InvoiceStatus.REJECTED,
         )
 
@@ -2237,9 +2300,9 @@ async def rework_invoice(
     user_role_lower = (current_user.role or "").lower()
 
     if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
-        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        is_hoa_approver = _is_hoa_approver(user_role_lower)
         if not is_hoa_approver:
-            raise HTTPException(403, "You are not authorized to send this invoice for rework")
+            raise HTTPException(403, "You are not authorized to send this invoice for rework at HOA stage")
         _update_invoice_status(db, invoice, InvoiceStatus.PROCESSED)
         invoice.current_approver_level = 1
         _record_step(
@@ -2266,9 +2329,9 @@ async def rework_invoice(
         )
 
     if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
-        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or email in [f.lower() for f in _get_finance_users(db, entity)]
+        is_ap_approver = _is_ap_approver(user_role_lower)
         if not is_ap_approver:
-            raise HTTPException(403, "You are not authorized to send this invoice for rework")
+            raise HTTPException(403, "You are not authorized to send this invoice for rework at AP stage")
         _update_invoice_status(db, invoice, InvoiceStatus.WAITING_CODING)
         invoice.current_approver_level = 1
         _record_step(
