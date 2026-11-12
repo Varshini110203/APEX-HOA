@@ -66,6 +66,8 @@ export const useInvoiceStore = create((set, get) => ({
     //  QUICK VIEW - FORM DATA
     // =============================
     quickViewFormData: {
+        requestNo: "",
+        requestId: "",
         vendorId: "",
         vendorName: "",
         invoiceNumber: "",
@@ -275,6 +277,10 @@ export const useInvoiceStore = create((set, get) => ({
 
             // Removed memo/notes sync because they are separate fields
 
+            // Sync requestNo and requestId
+            if (key === "requestNo") updatedFormData.requestId = value;
+            if (key === "requestId") updatedFormData.requestNo = value;
+
             // Sync totalAmount and totalInvoiceAmount since they also represent the same field
             if (key === "totalAmount") updatedFormData.totalInvoiceAmount = value;
             if (key === "totalInvoiceAmount") updatedFormData.totalAmount = value;
@@ -318,9 +324,12 @@ export const useInvoiceStore = create((set, get) => ({
         };
 
         const isModified = !!data?.extracted_data?.isModified;
+        const reqId = data.request_id ?? data.requestNo ?? data.requestId ?? data.extracted_data?.invoice_details?.request_id?.value ?? "";
 
         const formData = {
             isModified,
+            requestNo: reqId,
+            requestId: reqId,
             vendorId: data.extracted_data?.vendor_info?.vendor_id?.value ?? "",
             vendorName: data.extracted_data?.vendor_info?.name?.value ?? "",
             invoiceNumber: data.invoice_number ?? "",

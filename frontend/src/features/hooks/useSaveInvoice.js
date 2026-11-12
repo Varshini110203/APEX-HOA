@@ -168,6 +168,7 @@ export const useSaveInvoice = () => {
 
             invoice_details: {
                 ...activeInvoiceData.extracted_data?.invoice_details,
+                request_id: { ...activeInvoiceData.extracted_data?.invoice_details?.request_id, value: f.requestNo || f.requestId || activeInvoiceData.request_id },
                 invoice_number: { ...activeInvoiceData.extracted_data?.invoice_details?.invoice_number, value: f.invoiceNumber },
                 reference_number: { ...activeInvoiceData.extracted_data?.invoice_details?.reference_number, value: f.referenceNumber },
                 invoice_date: { ...activeInvoiceData.extracted_data?.invoice_details?.invoice_date, value: f.invoiceDate },
@@ -235,6 +236,7 @@ export const useSaveInvoice = () => {
 
         const payload = {
             ...activeInvoiceData,
+            request_id: f.requestNo || f.requestId || activeInvoiceData.request_id,
             vendor_id: f.vendorId,
             vendor_code: f.vendorCode || f.vendorId,
             vendor_name: f.vendorName,

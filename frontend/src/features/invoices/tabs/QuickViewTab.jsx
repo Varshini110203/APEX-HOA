@@ -105,6 +105,7 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
 
     const commonProps = {
         label: field.label,
+        placeholder: field.placeholder,
         value: displayValue,
         disabled: forceDisabled || !field.editable,
         onMouseEnter: () => onHover(field.key),
@@ -1128,7 +1129,9 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                                         storeValue={
                                                             field.key === "totalPayable"
                                                                 ? totalAmountPayable
-                                                                : (quickViewFormData?.[field.key] ?? "")
+                                                                : (field.key === "requestNo" || field.key === "requestId")
+                                                                    ? (quickViewFormData?.requestNo || quickViewFormData?.requestId || activeInvoiceData?.request_id || "")
+                                                                    : (quickViewFormData?.[field.key] ?? "")
                                                         }
                                                         currencyOptions={currencyOptions}
                                                         fetchCurrencyOptions={fetchCurrencyOptions}

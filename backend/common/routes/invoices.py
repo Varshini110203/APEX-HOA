@@ -3390,7 +3390,7 @@ async def update_invoice(
 
     # Update attributes
     update_fields = [
-        "vendor_id", "vendor_code", "vendor_name", "invoice_number", "reference_number", "status", 
+        "request_id", "vendor_id", "vendor_code", "vendor_name", "invoice_number", "reference_number", "status", 
         "exchange_rate", "confidence_score", "total_amount", 
         "amount_due", "invoice_date", "due_date", "posting_date",
         "payment_terms", "payment_method", "any_fee_applicable", "fee_amount",

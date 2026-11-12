@@ -66,6 +66,7 @@ class InvoiceCreate(InvoiceBase):
     pass
 
 class InvoiceUpdate(BaseModel):
+    request_id: Optional[str] = None
     extracted_data: Optional[Dict[str, Any]] = None
     status: Optional[InvoiceStatus] = None
     status_history: Optional[List[Dict[str, Any]]] = None
