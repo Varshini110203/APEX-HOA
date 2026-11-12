@@ -567,6 +567,8 @@ async def get_workflow_history(
     # Fetch User Names for Display
     user_names_map = {}
     involved_emails = set(flat_emails)
+    if invoice.uploaded_by:
+        involved_emails.add(invoice.uploaded_by.lower())
     for s in steps:
         if s.user: involved_emails.add(s.user.lower())
     for orig, substitutes in delegations_map.items():
@@ -576,9 +578,19 @@ async def get_workflow_history(
     
     if involved_emails:
         from common.models.db_models import User
-        user_list = db.query(User).filter(User.email.in_(list(involved_emails))).all()
+        from sqlalchemy import or_
+        user_list = db.query(User).filter(
+            or_(
+                User.email.in_(list(involved_emails)),
+                User.username.in_(list(involved_emails))
+            )
+        ).all()
         for u in user_list:
-            user_names_map[u.email.lower()] = u.username
+            display_name = u.username or u.email
+            if u.email:
+                user_names_map[u.email.lower()] = display_name
+            if u.username:
+                user_names_map[u.username.lower()] = display_name
 
     return WorkflowHistoryResponse(
         invoice_id=str(invoice_id),

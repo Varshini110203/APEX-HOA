@@ -6,6 +6,8 @@ from enum import Enum
 class InvoiceStatus(str, Enum):
     WAITING_CODING = "waiting_coding"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_HOA_APPROVAL = "waiting_hoa_approval"
+    WAITING_AP_APPROVAL = "waiting_ap_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
     PROCESSED = "processed"

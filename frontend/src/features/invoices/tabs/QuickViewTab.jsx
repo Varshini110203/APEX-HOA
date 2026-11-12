@@ -955,8 +955,8 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
             return status !== 'processed';
         }
 
-        if (userRole === 'coder' || userRole.includes('user')) {
-            if (status === 'waiting_approval') return true;
+        if (userRole === 'coder' || userRole.includes('user') || userRole.includes('hoa') || userRole.includes('ap')) {
+            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'sage_posted'].includes(status)) return true;
             if (status === 'waiting_coding' || status === 'processed') return false;
             return true;
         }

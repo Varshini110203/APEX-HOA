@@ -393,9 +393,9 @@ const CodingTab = ({ isActive = false }) => {
             return status !== 'processed';
         }
 
-        if (userRole === 'coder' || userRole.includes('user')) {
-            if (status === 'waiting_approval') return true;
-            if (status === 'waiting_coding' || status === 'processed') return false;
+        if (userRole === 'coder' || userRole.includes('ap') || userRole.includes('user')) {
+            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'processed', 'sage_posted'].includes(status)) return true;
+            if (status === 'waiting_coding') return false;
             return true;
         }
 

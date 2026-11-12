@@ -21,6 +21,8 @@ import enum
 class InvoiceStatusEnum(str, enum.Enum):
     WAITING_CODING = "waiting_coding"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_HOA_APPROVAL = "waiting_hoa_approval"
+    WAITING_AP_APPROVAL = "waiting_ap_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
     PROCESSED = "processed"
@@ -35,6 +37,8 @@ class InvoiceStatusEnum(str, enum.Enum):
 class WorkflowStepTypeEnum(str, enum.Enum):
     PROCESSED = "processed"
     CODING = "coding"
+    HOA_APPROVED = "hoa_approved"
+    AP_CODED = "ap_coded"
     APPROVER_1 = "approver_1"
     APPROVER_2 = "approver_2"
     APPROVER_3 = "approver_3"
@@ -112,7 +116,7 @@ class Invoice(Base):
     uploaded_by = Column(String(100), nullable=False, index=True)
     uploaded_by_id = Column(Integer, ForeignKey(
         "users.id"), nullable=True, index=True)  # FK to users
-    status = Column(SQLEnum(InvoiceStatusEnum), nullable=False,
+    status = Column(SQLEnum(InvoiceStatusEnum, native_enum=False, length=50), nullable=False,
                     default=InvoiceStatusEnum.WAITING_APPROVAL, index=True)
     entity = Column(String(100), ForeignKey(
         "entity_master.entity_id"), nullable=True, index=True)

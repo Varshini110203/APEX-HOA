@@ -178,52 +178,50 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
     }, [quickViewFormData]);
 
 
-    // ── Scanner / Coder actions ────────────────────────────────────────────
-    const handleSendToCoding = async () => {
+    // ── HOA User: Send to HOA Approval (Step 1-6) ──────────────────────────
+    const handleHoaSendToApproval = async () => {
         if (!validateRequiredFields()) return;
 
-        setActionLoading("sendToCoding");
+        setActionLoading("sendToApproval");
 
         try {
             const saveRes = await handleSave({}, vendor);
-
-            // If the data save failed (returned null), handleSave already showed
-            // an error toast — bail out here to avoid a second cascading error.
             if (!saveRes) {
                 return;
             }
 
             const payload = await saveInvoice(viewInvoiceId, {
-                status: "waiting_coding",
+                status: "waiting_hoa_approval",
                 last_updated_at: saveRes?.updated_at || activeInvoiceData?.updated_at
             });
 
-            // FIRST: check for conflict / error
             if (payload?.error || payload?.message?.toLowerCase().includes("modified")) {
-                toast.error(payload.message || "This invoice was updated by another user.");
+                toast.error(payload.message || "This request was updated by another user.");
                 return;
             }
 
-            // THEN: success case
-            if (payload?.status === "waiting_coding") {
-                toast.success("Invoice sent for coding successfully!");
+            if (payload?.status === "waiting_hoa_approval") {
+                toast.success("Request sent for HOA approval successfully!");
                 await queryClient.invalidateQueries({ queryKey: ["invoice-preview", viewInvoiceId] });
+                await queryClient.invalidateQueries({ queryKey: ["workflow", viewInvoiceId] });
+                await queryClient.invalidateQueries({ queryKey: ["auditFlow", viewInvoiceId] });
                 await queryClient.invalidateQueries({ queryKey: ["invoices"] });
                 await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
                 resetQuickView();
                 setInvoiceSection(1);
                 navigate("/invoices");
             } else {
-                toast.error(payload?.message || "Something went wrong while sending for coding.");
+                toast.error(payload?.message || "Something went wrong while sending for HOA approval.");
             }
-
         } catch (err) {
-            console.error("Send to coding error:", err);
-            toast.error("Failed to send invoice for coding.");
+            console.error("Send to HOA approval error:", err);
+            toast.error("Failed to send request for HOA approval.");
         } finally {
             setActionLoading(null);
         }
     };
+
+    const handleSendToCoding = handleHoaSendToApproval;
 
 
     const handleDiscard = () => {
@@ -235,7 +233,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
         }, 100);
     };
 
-    const handleSendToApproval = async () => {
+    // ── AP Coder: Codification & Send to AP Approval (Step 9) ─────────────────
+    const handleApSendToApproval = async () => {
         if (!validateRequiredFields()) return;
 
         const isZoho = getERPSystem() === "Zoho";
@@ -257,61 +256,62 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
         }
 
         // 2. Workflow validation
-        if (isWorkflowMissing) {
-            // The cached workflow state says it's missing. Double-check with the server
-            // in case the user just created the workflow in another tab.
-            setActionLoading("sendToApproval");
-            try {
-                const freshWorkflow = await getWorkflowData(viewInvoiceId, workflowParams);
-                if (!freshWorkflow?.assigned_approvers?.length) {
-                    toast.error("No workflow defined for this invoice. Please configure a vendor or codification workflow.");
-                    setActionLoading(null);
-                    return;
-                }
-                // If the workflow exists now, update the React Query cache so the UI syncs, and proceed.
-                queryClient.setQueryData(["invoice-preview", viewInvoiceId, selectedVendorId, workflowParams], (old) => {
-                    return old ? { ...old, workflowData: freshWorkflow } : old;
-                });
-            } catch (err) {
-                console.error("Failed to re-verify workflow:", err);
-                toast.error("No workflow defined for this invoice. Please configure a vendor or codification workflow.");
-                setActionLoading(null);
-                return;
-            }
-        }
+        // if (isWorkflowMissing) {
+        //     // The cached workflow state says it's missing. Double-check with the server
+        //     // in case the user just created the workflow in another tab.
+        //     setActionLoading("sendToApproval");
+        //     try {
+        //         const freshWorkflow = await getWorkflowData(viewInvoiceId, workflowParams);
+        //         if (!freshWorkflow?.assigned_approvers?.length) {
+        //             toast.error("No workflow defined for this invoice. Please configure a vendor or codification workflow.");
+        //             setActionLoading(null);
+        //             return;
+        //         }
+        //         // If the workflow exists now, update the React Query cache so the UI syncs, and proceed.
+        //         queryClient.setQueryData(["invoice-preview", viewInvoiceId, selectedVendorId, workflowParams], (old) => {
+        //             return old ? { ...old, workflowData: freshWorkflow } : old;
+        //         });
+        //     } catch (err) {
+        //         console.error("Failed to re-verify workflow:", err);
+        //         toast.error("No workflow defined for this invoice. Please configure a vendor or codification workflow.");
+        //         setActionLoading(null);
+        //         return;
+        //     }
+        // }
 
         setActionLoading("sendToApproval");
         try {
             const saveRes = await handleSave({}, vendor);
-
-            // If the data save failed (returned null), handleSave already showed
-            // an error toast — bail out here to avoid a second cascading error.
             if (!saveRes) {
                 return;
             }
 
             const payload = await saveInvoice(viewInvoiceId, {
-                status: "waiting_approval",
+                status: "waiting_ap_approval",
                 last_updated_at: saveRes?.updated_at || activeInvoiceData?.updated_at
             });
-            if (payload?.status === "waiting_approval") {
-                toast.success("Invoice sent for approval successfully!");
+            if (payload?.status === "waiting_ap_approval" || payload?.status === "waiting_approval") {
+                toast.success("Codification sent for AP approval successfully!");
                 await queryClient.invalidateQueries({ queryKey: ["invoice-preview", viewInvoiceId] });
+                await queryClient.invalidateQueries({ queryKey: ["workflow", viewInvoiceId] });
+                await queryClient.invalidateQueries({ queryKey: ["auditFlow", viewInvoiceId] });
                 await queryClient.invalidateQueries({ queryKey: ["invoices"] });
                 await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
                 resetQuickView();
                 setInvoiceSection(1);
-                navigate("/coding");
+                navigate("/invoices");
             } else {
-                toast.error(payload?.message || "Something went wrong while sending for approval.");
+                toast.error(payload?.message || "Something went wrong while sending for AP approval.");
             }
         } catch (err) {
-            console.error("Send to approval error:", err);
-            toast.error("Failed to send invoice for approval.");
+            console.error("Send to AP approval error:", err);
+            toast.error("Failed to send invoice for AP approval.");
         } finally {
             setActionLoading(null);
         }
     };
+
+    const handleSendToApproval = handleApSendToApproval;
 
 
 
@@ -547,8 +547,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
     const busy = (key) => actionLoading === key;
 
     const isApproverView =
-        userRole.includes("approver") &&
-        ["waiting_approval", "reworked", "sage_post_failed"].includes((currentStatus || "").toLowerCase());
+        (userRole.includes("approver") || userRole === "admin") &&
+        ["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked", "sage_post_failed"].includes((currentStatus || "").toLowerCase());
     const canAction = (key) => uiStatusReady && !!uiStatus?.[key] && !actionLoading;
 
     const btnBase =
@@ -617,20 +617,52 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                     )}
                     {!activeInvoiceData?.is_archived && (
                         <>
-                            {/* ── User / Scanner buttons ───────────────────────── */}
-                            {((["scanner", "coder"].some(r => userRole.includes(r)) || userRole.includes("user")) && (currentStatus || "").toLowerCase() === "processed" ||
-                                ((userRole.includes("coder") || userRole.includes("user")) && (currentStatus || "").toLowerCase() === "waiting_coding")) && (
+                            {/* Refresh button visible for all currentStatus */}
+                            <div className="w-[130px]">
+                                <CustomButton
+                                    variant="outline"
+                                    height="h-[34px]"
+                                    disabled={!!actionLoading}
+                                    onClick={handleRefresh}
+                                >
+                                    {busy("refreshing") ? "Refreshing..." : "Refresh"}
+                                </CustomButton>
+                            </div>
+
+                            {/* ── HOA User buttons (processed / reworked) ───────────────────────── */}
+                            {((userRole.includes("hoa") || userRole.includes("user") || userRole === "admin") &&
+                                (currentStatus === "processed" || (currentStatus === "reworked" && !userRole.includes("ap")))) && (
                                     <>
                                         <div className="w-[130px]">
+                                            <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
+                                        </div>
+                                        <div className="w-[130px]">
                                             <CustomButton
-                                                variant="outline"
+                                                variant="primary"
                                                 height="h-[34px]"
                                                 disabled={!!actionLoading}
-                                                onClick={handleRefresh}
+                                                onClick={handleSaveInvoice}
                                             >
-                                                {busy("refreshing") ? "Refreshing..." : "Refresh"}
+                                                {busy("saving") ? "Saving..." : "Save"}
                                             </CustomButton>
                                         </div>
+                                        <div className="w-[130px]">
+                                            <CustomButton
+                                                variant="success"
+                                                height="h-[34px]"
+                                                disabled={isDuplicate || !!actionLoading}
+                                                onClick={handleHoaSendToApproval}
+                                            >
+                                                {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
+                                            </CustomButton>
+                                        </div>
+                                    </>
+                                )}
+
+                            {/* ── AP Coder buttons (waiting_coding) ───────────────────────── */}
+                            {((userRole.includes("coder") || userRole.includes("ap") || userRole.includes("user") || userRole === "admin") &&
+                                currentStatus === "waiting_coding") && (
+                                    <>
                                         <div className="w-[130px]">
                                             <CustomButton variant="outline" height="h-[34px]" onClick={handleDiscard}>Discard</CustomButton>
                                         </div>
@@ -651,17 +683,11 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                 disabled={
                                                     isDuplicate ||
                                                     !!actionLoading ||
-                                                    (currentStatus === "waiting_coding" && isAmountMismatch)
+                                                    isAmountMismatch
                                                 }
-                                                onClick={
-                                                    currentStatus === "waiting_coding"
-                                                        ? handleSendToApproval
-                                                        : handleSendToCoding
-                                                }
+                                                onClick={handleApSendToApproval}
                                             >
-                                                {currentStatus === "waiting_coding"
-                                                    ? (busy("sendToApproval") ? "Sending..." : "Send to Approval")
-                                                    : (busy("sendToCoding") ? "Sending..." : "Send to Coding")}
+                                                {busy("sendToApproval") ? "Sending..." : "Send for Approval"}
                                             </CustomButton>
                                         </div>
                                     </>
@@ -669,15 +695,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
 
                             {/* ── Approver buttons ──────────────────────────────── */}
                             {/* ── Admin-only buttons ───────────────────────────── */}
-                            {userRole === "admin" && ["waiting_approval", "reworked"].includes(currentStatus) && (
+                            {userRole === "admin" && ["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus) && (
                                 <>
-                                    <button
-                                        onClick={handleRefresh}
-                                        disabled={!!actionLoading}
-                                        className={getBtnClass("blue", !actionLoading)}
-                                    >
-                                        {busy("refreshing") ? "Refreshing..." : "Refresh"}
-                                    </button>
                                     <button
                                         onClick={() => setShowDelegateModal(true)}
                                         className={getBtnClass("blue", true)}
@@ -727,17 +746,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                         </>
                                     )}
 
-                                    {["waiting_approval", "reworked"].includes(currentStatus) && (
+                                    {["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus) && (
                                         <>
-                                            {/* Refresh */}
-                                            <button
-                                                onClick={handleRefresh}
-                                                disabled={!!actionLoading}
-                                                className={getBtnClass("blue", !actionLoading)}
-                                            >
-                                                {busy("refreshing") ? "Refreshing..." : "Refresh"}
-                                            </button>
-
                                             {/* Enable Editing — always available when not in active edit session */}
                                             {!editingEnabled && (
                                                 <button
@@ -750,7 +760,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                             )}
 
                                             {/* Save — appears once editing is unlocked */}
-                                            {editingEnabled && (currentStatus === "waiting_approval" || currentStatus === "reworked") && (
+                                            {editingEnabled && (["waiting_approval", "waiting_hoa_approval", "waiting_ap_approval", "reworked"].includes(currentStatus)) && (
                                                 <div className="w-[130px]">
                                                     <CustomButton
                                                         variant="primary"
@@ -869,9 +879,9 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                         )}
                         {modal.action === "rework" && (
                             <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-4 py-3 text-sm text-yellow-700">
-                                {uiStatus?.current_level === 1
-                                    ? "The invoice will be sent back for coding."
-                                    : "The invoice will be sent back to the previous Finance Team approver for corrections."}
+                                {currentStatus === "waiting_hoa_approval"
+                                    ? "The request will be sent back to the HOA User for edits."
+                                    : "The invoice will be sent back to the AP Coder for codification corrections."}
                             </div>
                         )}
 

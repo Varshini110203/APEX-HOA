@@ -56,6 +56,8 @@ router = APIRouter(prefix="/workflow/action", tags=["Workflow Actions"])
 class InvoiceStatus:
     WAITING_CODING = "waiting_coding"
     WAITING_APPROVAL = "waiting_approval"
+    WAITING_HOA_APPROVAL = "waiting_hoa_approval"
+    WAITING_AP_APPROVAL = "waiting_ap_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
     PROCESSED = "processed"
@@ -67,6 +69,8 @@ class InvoiceStatus:
 
 class StepType:
     APPROVED = "approved"
+    HOA_APPROVED = "hoa_approved"
+    AP_CODED = "ap_coded"
     REJECTED = "rejected"
     REWORKED = "reworked"
     POSTED = "posted"
@@ -1127,10 +1131,57 @@ async def get_ui_status_from_frontend(
         if hasattr(invoice.status, "value")
         else str(invoice.status)
     )
- 
+
+    user_role_lower = (current_user.role or "").lower()
     email = current_user.email.lower()
     finance_users = _get_finance_users(db, entity)
     is_finance = email in [f.lower() for f in finance_users]
+
+    if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
+        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        return ApproverUIStatus(
+            invoice_id=str(invoice_id),
+            current_status=current_status,
+            current_level=1,
+            workflow_type="hoa_approval",
+            can_approve=is_hoa_approver,
+            can_reject=is_hoa_approver,
+            can_rework=is_hoa_approver,
+            can_enable_editing=is_hoa_approver,
+            can_repost_sage=False,
+            is_posting_approver=False,
+            is_threshold_approver=False,
+            is_finance_team=False,
+            user_level=1,
+            level_already_approved=False,
+            already_acted=False,
+            assigned_approvers=[],
+            sage_post_error=None,
+            rework_error=None,
+        )
+
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL and not assigned:
+        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or is_finance
+        return ApproverUIStatus(
+            invoice_id=str(invoice_id),
+            current_status=current_status,
+            current_level=1,
+            workflow_type="ap_approval",
+            can_approve=is_ap_approver,
+            can_reject=is_ap_approver,
+            can_rework=is_ap_approver,
+            can_enable_editing=is_ap_approver,
+            can_repost_sage=False,
+            is_posting_approver=is_ap_approver,
+            is_threshold_approver=False,
+            is_finance_team=is_finance,
+            user_level=1,
+            level_already_approved=False,
+            already_acted=False,
+            assigned_approvers=[],
+            sage_post_error=None,
+            rework_error=None,
+        )
  
     steps = _steps_for_invoice(db, invoice_id)
     # ── Filter steps to the current cycle (post-rework/recall) ──
@@ -1393,7 +1444,42 @@ async def approve_invoice(
         else str(invoice.status)
     )
 
-    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.REWORKED):
+    user_role_lower = (current_user.role or "").lower()
+    email = current_user.email.lower()
+
+    # Step 7: HOA approver checks and approves
+    if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
+        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        if not is_hoa_approver:
+            raise HTTPException(403, "You are not authorized to approve at HOA stage")
+
+        _record_step(
+            db, invoice_id,
+            step_name="HOA Approval",
+            step_type=StepType.HOA_APPROVED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+        )
+        await audit_service.log_action(
+            db=db,
+            invoice_id=invoice_id,
+            action="HOA Approved",
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment}
+        )
+        # Step 8: request comes to AP coder
+        _update_invoice_status(db, invoice, InvoiceStatus.WAITING_CODING)
+        db.commit()
+        logger.info(f"[Workflow] Invoice {invoice_id} approved by HOA Approver {current_user.username}. Moved to waiting_coding.")
+        return ActionResponse(
+            success=True,
+            message="HOA Approved successfully. Request moved to AP Coder for codification.",
+            new_status=InvoiceStatus.WAITING_CODING,
+        )
+
+    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.WAITING_AP_APPROVAL, InvoiceStatus.REWORKED):
         raise HTTPException(
             400, f"Invoice is not awaiting approval (status: {current_status})")
 
@@ -1402,12 +1488,77 @@ async def approve_invoice(
     approval_types = [StepType.LEVEL_APPROVED, StepType.THRESHOLD_APPROVED, StepType.POSTING_APPROVED, StepType.APPROVED]
     finance_users = _get_finance_users(db, entity)
     current_level = invoice.current_approver_level or 1
-    email = current_user.email.lower()
 
     assigned: List[Dict] = workflow.get("assigned_approvers", [])
     mandatory = [a for a in assigned if a.get("type") == "mandatory"]
     threshold_entries = [a for a in assigned if a.get("type") == "threshold"]
     posting_entries = [a for a in assigned if a.get("type") == "posting"]
+
+    # Step 10 fallback: If waiting_ap_approval and no complex approvers assigned, AP Approver approves and posts to Sage
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL and not mandatory and not threshold_entries and not posting_entries:
+        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or email in [f.lower() for f in finance_users]
+        if not is_ap_approver:
+            raise HTTPException(403, "You are not authorized to approve at AP stage")
+
+        _update_invoice_status(db, invoice, InvoiceStatus.APPROVED)
+        _record_step(
+            db, invoice_id,
+            step_name="AP Approval",
+            step_type=StepType.APPROVED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+        )
+        await audit_service.log_action(
+            db=db,
+            invoice_id=invoice_id,
+            action="AP Approved",
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment}
+        )
+        db.commit()
+
+        # Step 10: Post to Sage
+        sage_result = await _post_to_sage(invoice_id, entity, db)
+        erp_name = settings.TOOL.capitalize()
+        if sage_result.get("success"):
+            invoice = invoice_repo.get(db, invoice_id)
+            _update_invoice_status(db, invoice, InvoiceStatus.SAGE_POSTED)
+            invoice.sage_bill_number = sage_result.get("sage_bill_number")
+            _record_step(
+                db, invoice_id,
+                step_name=f"Posted to {erp_name}",
+                step_type=StepType.POSTED,
+                user_email=email,
+                comment=f"{erp_name} Bill Number: {sage_result.get('sage_bill_number')}",
+                entity=entity,
+            )
+            db.commit()
+            return ActionResponse(
+                success=True,
+                message=f"Invoice fully approved and posted to {erp_name}.",
+                new_status=InvoiceStatus.SAGE_POSTED,
+                sage_post_result=sage_result,
+            )
+        else:
+            invoice = invoice_repo.get(db, invoice_id)
+            _update_invoice_status(db, invoice, InvoiceStatus.SAGE_POST_FAILED)
+            _record_step(
+                db, invoice_id,
+                step_name=f"{erp_name} Post Failed",
+                step_type=StepType.POST_FAILED,
+                user_email=email,
+                comment=sage_result.get("message"),
+                entity=entity,
+            )
+            db.commit()
+            return ActionResponse(
+                success=False,
+                message=f"Invoice approved but Sage post failed: {sage_result.get('message')}",
+                new_status=InvoiceStatus.SAGE_POST_FAILED,
+                sage_post_result=sage_result,
+            )
 
     # ── Filter steps to the current cycle (post-rework/recall) ──
     current_cycle_steps = _get_current_cycle_steps(steps)
@@ -1923,7 +2074,40 @@ async def reject_invoice(
         if hasattr(invoice.status, "value")
         else str(invoice.status)
     )
-    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.REWORKED):
+    email = current_user.email.lower()
+    user_role_lower = (current_user.role or "").lower()
+
+    if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
+        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        if not is_hoa_approver:
+            raise HTTPException(403, "You are not authorized to reject this invoice at HOA stage")
+        _update_invoice_status(db, invoice, InvoiceStatus.REJECTED)
+        invoice.current_approver_level = 1
+        invoice.approved_by_list = []
+        _record_step(
+            db, invoice_id,
+            step_name="Invoice Rejected by HOA Approver",
+            step_type=StepType.REJECTED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+            approver_number=1,
+        )
+        await audit_service.log_action(
+            db=db, invoice_id=invoice_id,
+            action=AuditAction.REJECTED,
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment}
+        )
+        db.commit()
+        return ActionResponse(
+            success=True,
+            message="Invoice has been rejected by HOA Approver.",
+            new_status=InvoiceStatus.REJECTED,
+        )
+
+    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.WAITING_AP_APPROVAL, InvoiceStatus.REWORKED):
         raise HTTPException(
             400, f"Invoice cannot be rejected from status: {current_status}")
 
@@ -2049,7 +2233,68 @@ async def rework_invoice(
         if hasattr(invoice.status, "value")
         else str(invoice.status)
     )
-    if current_status != InvoiceStatus.WAITING_APPROVAL:
+    email = current_user.email.lower()
+    user_role_lower = (current_user.role or "").lower()
+
+    if current_status == InvoiceStatus.WAITING_HOA_APPROVAL:
+        is_hoa_approver = "hoa approver" in user_role_lower or user_role_lower == "admin"
+        if not is_hoa_approver:
+            raise HTTPException(403, "You are not authorized to send this invoice for rework")
+        _update_invoice_status(db, invoice, InvoiceStatus.PROCESSED)
+        invoice.current_approver_level = 1
+        _record_step(
+            db, invoice_id,
+            step_name="Sent for Rework to HOA User",
+            step_type=StepType.REWORKED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+        )
+        await audit_service.log_action(
+            db=db, invoice_id=invoice_id,
+            action=AuditAction.REWORKED,
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment, "rework_to": "hoa_user"}
+        )
+        db.commit()
+        return ActionResponse(
+            success=True,
+            message="Invoice returned to HOA User for rework.",
+            new_status=InvoiceStatus.PROCESSED,
+            next_level=1,
+        )
+
+    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
+        is_ap_approver = "ap approver" in user_role_lower or user_role_lower == "admin" or email in [f.lower() for f in _get_finance_users(db, entity)]
+        if not is_ap_approver:
+            raise HTTPException(403, "You are not authorized to send this invoice for rework")
+        _update_invoice_status(db, invoice, InvoiceStatus.WAITING_CODING)
+        invoice.current_approver_level = 1
+        _record_step(
+            db, invoice_id,
+            step_name="Sent for Rework to AP Coder",
+            step_type=StepType.REWORKED,
+            user_email=email,
+            comment=payload.comment,
+            entity=entity,
+        )
+        await audit_service.log_action(
+            db=db, invoice_id=invoice_id,
+            action=AuditAction.REWORKED,
+            user=current_user.username,
+            entity=entity,
+            details={"comment": payload.comment, "rework_to": "ap_coder"}
+        )
+        db.commit()
+        return ActionResponse(
+            success=True,
+            message="Invoice returned to AP Coder for codification rework.",
+            new_status=InvoiceStatus.WAITING_CODING,
+            next_level=1,
+        )
+
+    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.REWORKED):
         raise HTTPException(
             400, f"Invoice cannot be sent for rework from status: {current_status}")
 
