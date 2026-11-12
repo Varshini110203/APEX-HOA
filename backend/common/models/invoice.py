@@ -23,6 +23,7 @@ class StatusHistoryItem(BaseModel):
     comment: Optional[str] = None
 
 class InvoiceBase(BaseModel):
+    request_id: Optional[str] = None
     filename: str
     original_filename: str
     file_path: str

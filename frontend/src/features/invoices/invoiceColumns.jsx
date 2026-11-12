@@ -183,6 +183,13 @@ export const VIEW_OPTIONS = [
 // ─── Condensed columns ────────────────────────────────────────────────────────
 export const getCondensedColumns = (onView, onDelete, onArchive, userRole, openingInvoiceId = null, hideDelete = false, hideNextActionBy = false) => [
     {
+        header: "Request ID",
+        accessor: "request_id",
+        sortable: true,
+        filterable: true,
+        render: (val) => val || "-",
+    },
+    {
         header: "Vendor Name",
         accessor: "vendor_name",
         sortable: true,
@@ -279,6 +286,13 @@ export const getCondensedColumns = (onView, onDelete, onArchive, userRole, openi
 
 // ─── Full columns ─────────────────────────────────────────────────────────────
 export const getFullColumns = (onView, onDelete, onArchive, userRole, openingInvoiceId = null, hideDelete = false, hideNextActionBy = false) => [
+    {
+        header: "Request ID",
+        accessor: "request_id",
+        sortable: true,
+        filterable: true,
+        render: (val) => val || "-",
+    },
     {
         header: "Vendor Name",
         accessor: "vendor_name",

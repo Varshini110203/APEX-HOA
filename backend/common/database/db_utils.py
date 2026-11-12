@@ -116,6 +116,7 @@ def invoice_to_dict(invoice: Invoice, include_relationships: bool = True, minima
     result = {
         "id": str(invoice.id),
         "_id": str(invoice.id),  # For backward compatibility
+        "request_id": getattr(invoice, "request_id", None),
         "filename": invoice.filename,
         "original_filename": invoice.original_filename,
         "file_path": invoice.file_path,

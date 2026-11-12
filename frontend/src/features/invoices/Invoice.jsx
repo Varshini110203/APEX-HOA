@@ -301,8 +301,8 @@ const Invoice = () => {
         }));
     }, [handleView, handleDelete, handleArchive, backendFilters, userRole, openingInvoiceId, pageTab]);
 
-    const handleUpload = async (files) => {
-        if (!files || files.length === 0) {
+    const handleUpload = async (files, attachments = [], requestId = null) => {
+        if ((!files || files.length === 0) && (!attachments || attachments.length === 0)) {
             toast.warning("Please select at least one file");
             return;
         }
@@ -316,9 +316,13 @@ const Invoice = () => {
             const controller = new AbortController();
             uploadAbortControllerRef.current = controller;
 
-            const totalFiles = files.length;
+            const totalFiles = (files || []).length;
             const formData = new FormData();
-            files.forEach((f) => formData.append("files", f));
+            (files || []).forEach((f) => formData.append("files", f));
+            (attachments || []).forEach((f) => formData.append("attachments", f));
+            if (requestId) {
+                formData.append("request_id", requestId);
+            }
             const progressUrl = `${API.defaults.baseURL}/invoices/upload-progress/${taskId}`;
             eventSource = new EventSource(progressUrl);
             eventSource.onmessage = (event) => {
@@ -511,7 +515,7 @@ const Invoice = () => {
                                         onClick={() => setIsModalOpen(true)}
                                         className="!w-auto !h-10 px-4"
                                     >
-                                        Add Invoice
+                                        Create New Request
                                     </CustomButton>
                                 </div>
                             )}

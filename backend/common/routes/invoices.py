@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, status, BackgroundTasks
 from common.config.settings import settings
 from common.utils.currency_utils import remove_currency_format
 import logging
@@ -291,7 +291,9 @@ async def check_duplicate_invoice_endpoint(
 
 @router.post("/upload")
 async def upload_invoices(
-    files: List[UploadFile] = File(...),
+    files: Optional[List[UploadFile]] = File(None),
+    attachments: Optional[List[UploadFile]] = File(None),
+    request_id: Optional[str] = Form(None),
     task_id: Optional[str] = Query(None),
     current_user: UserResponse = Depends(get_current_user),
     entity: str = Depends(get_current_entity),
@@ -316,10 +318,10 @@ async def upload_invoices(
         if queue:
             await queue.put({"status": status, "message": message, "data": data, "progress": progress})
 
-    async def _process_single_file(file: UploadFile, index: int, total_files: int):
+    async def _process_single_file(file: UploadFile, index: int, total_files: int, assigned_request_id: Optional[str] = None):
         #  Isolated DB Session per Task
         task_db = SessionLocal()
-        request_id = str(uuid.uuid4())
+        trace_req_id = str(uuid.uuid4())
         clean_name = file.filename.replace("\\", "/").split("/")[-1]
         
         await emit_progress("processing", f"[{index}/{total_files}] Starting processing for {clean_name}...", progress=25)
@@ -331,7 +333,7 @@ async def upload_invoices(
             total_start = time.time()
 
             logger.info({
-            "request_id": request_id,
+            "request_id": trace_req_id,
             "event": "file_processing_started",
             "filename": clean_name,
             "user": current_user.username,
@@ -400,6 +402,7 @@ async def upload_invoices(
 
             # ---- CREATE DB RECORD (INITIAL) ----
             new_invoice = Invoice(
+                request_id=assigned_request_id,
                 filename=new_name,
                 original_filename=clean_name,
                 file_path=file_path,
@@ -750,6 +753,53 @@ async def upload_invoices(
                 task_db.commit()
                 return {"success": False, "filename": clean_name, "reason": "cancelled"}
 
+            # Process attachments if provided
+            if attachments:
+                try:
+                    from common.services.azure_blob import upload_file_to_blob, AZURE_BLOB_FOLDER
+                    from common.config.config import TOOL
+                    prefix = f"{AZURE_BLOB_FOLDER}/{TOOL}" if AZURE_BLOB_FOLDER else TOOL
+
+                    att_list = []
+                    for att_file in attachments:
+                        att_clean = att_file.filename.replace("\\", "/").split("/")[-1]
+                        att_n, att_e = os.path.splitext(att_clean)
+                        att_ts = get_ist_now().strftime("%Y%m%d_%H%M%S")
+                        att_new_name = f"{att_n}_{att_ts}{att_e}"
+                        att_local_path = os.path.join(upload_dir, att_new_name)
+                        
+                        # Read contents and save locally
+                        att_contents = await att_file.read()
+                        with open(att_local_path, "wb") as f_att:
+                            f_att.write(att_contents)
+                        
+                        # Upload to Azure Blob Storage
+                        att_blob = f"{prefix}/attachments/{invoice_id}/{att_new_name}"
+                        upload_file_to_blob(att_local_path, att_blob)
+                        
+                        # Remove local temp file
+                        try:
+                            if os.path.exists(att_local_path):
+                                os.remove(att_local_path)
+                        except:
+                            pass
+                            
+                        att_list.append({
+                            "filename": att_clean,
+                            "blob_name": att_blob,
+                            "file_path": att_local_path,
+                            "uploaded_by": current_user.username,
+                            "uploaded_at": get_ist_now().isoformat(),
+                            "size": len(att_contents)
+                        })
+                    
+                    if att_list:
+                        new_invoice.attachments = serialize_json_field(att_list)
+                        task_db.commit()
+                        print(f"[Backend] Saved {len(att_list)} attachments for invoice {invoice_id}")
+                except Exception as att_err:
+                    print(f"[Backend] Warning: Failed to process attachments for invoice {invoice_id}: {att_err}")
+
             # Update final status
             new_invoice.status = InvoiceStatusEnum.PROCESSED
             # Update History for Processed
@@ -826,17 +876,109 @@ async def upload_invoices(
         finally:
             task_db.close()
 
+    # Ensure files is a list
+    invoice_files = [f for f in (files or []) if f and f.filename]
+    attachment_files = [a for a in (attachments or []) if a and a.filename]
+
+    if not invoice_files and not attachment_files:
+        raise HTTPException(status_code=400, detail="No files or attachments provided")
+
+    # If no invoice PDF was uploaded but attachments were provided, create a request record with attachments
+    if not invoice_files and attachment_files:
+        primary_att = attachment_files[0]
+        att_clean = primary_att.filename.replace("\\", "/").split("/")[-1]
+        name, ext = os.path.splitext(att_clean)
+        timestamp = get_ist_now().strftime("%Y%m%d_%H%M%S")
+        new_name = f"{name}_{timestamp}{ext}"
+        file_path = os.path.join(upload_dir, new_name)
+
+        contents = await primary_att.read()
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        from common.services.azure_blob import upload_file_to_blob, AZURE_BLOB_FOLDER, get_blob_name_from_path
+        from common.config.config import TOOL
+        prefix = f"{AZURE_BLOB_FOLDER}/{TOOL}" if AZURE_BLOB_FOLDER else TOOL
+
+        blob_name = get_blob_name_from_path(file_path)
+        try:
+            upload_file_to_blob(file_path, blob_name)
+        except Exception as b_err:
+            print(f"[Backend] Blob upload error: {b_err}")
+
+        new_invoice = Invoice(
+            request_id=request_id,
+            filename=new_name,
+            original_filename=att_clean,
+            file_path=file_path,
+            uploaded_by=current_user.username,
+            status=InvoiceStatusEnum.WAITING_CODING,
+            entity=entity,
+            uploaded_at=get_ist_now(),
+            posting_date=get_ist_now().date(),
+            extracted_data=serialize_json_field({}),
+            processing_steps=serialize_json_field([]),
+        )
+        invoice_repo.create(db, obj_in=new_invoice)
+        invoice_id = new_invoice.id
+
+        # Save all attachments metadata
+        all_atts = [{
+            "filename": att_clean,
+            "blob_name": blob_name,
+            "file_path": file_path,
+            "uploaded_by": current_user.username,
+            "uploaded_at": get_ist_now().isoformat(),
+            "size": len(contents)
+        }]
+
+        for other_att in attachment_files[1:]:
+            o_clean = other_att.filename.replace("\\", "/").split("/")[-1]
+            o_n, o_e = os.path.splitext(o_clean)
+            o_new = f"{o_n}_{get_ist_now().strftime('%Y%m%d_%H%M%S')}{o_e}"
+            o_path = os.path.join(upload_dir, o_new)
+            o_cnt = await other_att.read()
+            with open(o_path, "wb") as fo:
+                fo.write(o_cnt)
+            o_blob = f"{prefix}/attachments/{invoice_id}/{o_new}"
+            upload_file_to_blob(o_path, o_blob)
+            try:
+                if os.path.exists(o_path): os.remove(o_path)
+            except: pass
+            all_atts.append({
+                "filename": o_clean,
+                "blob_name": o_blob,
+                "file_path": o_path,
+                "uploaded_by": current_user.username,
+                "uploaded_at": get_ist_now().isoformat(),
+                "size": len(o_cnt)
+            })
+
+        new_invoice.attachments = serialize_json_field(all_atts)
+        db.commit()
+        db.refresh(new_invoice)
+
+        try:
+            if os.path.exists(file_path): os.remove(file_path)
+        except: pass
+
+        return {
+            "count": 1,
+            "invoices": [invoice_to_dict(new_invoice)],
+            "failed": []
+        }
+
     # If task_id is provided, register queue (already done above)
     if task_id and task_id not in upload_progress_queues:
          upload_progress_queues[task_id] = asyncio.Queue()
          queue = upload_progress_queues[task_id]
 
-    await emit_progress("processing", f"Starting upload for {len(files)} files...")
+    await emit_progress("processing", f"Starting upload for {len(invoice_files)} files...")
 
     #  Sequential Processing: process one invoice at a time
-    total_files = len(files)
+    total_files = len(invoice_files)
     try:
-        for idx, file in enumerate(files):
+        for idx, file in enumerate(invoice_files):
             # Check for cancellation before processing each file
             if task_id in cancelled_tasks:
                 print(f"[Backend] Task {task_id} cancelled. Stopping at file {idx+1}/{total_files}")
@@ -845,7 +987,7 @@ async def upload_invoices(
                 break
 
             try:
-                res = await _process_single_file(file, idx + 1, total_files)
+                res = await _process_single_file(file, idx + 1, total_files, assigned_request_id=request_id)
                 if res["success"]:
                     saved_invoices.append(res["data"])
                 elif res.get("reason") == "cancelled":
@@ -1206,7 +1348,7 @@ async def get_invoices(
             )
         )
 
-    search_fields = ["invoice_number", "vendor_name", "vendor_id", "status", "filename"]
+    search_fields = ["request_id", "invoice_number", "vendor_name", "vendor_id", "status", "filename"]
     
     paginated_res = invoice_repo.get_paginated(
         db,
