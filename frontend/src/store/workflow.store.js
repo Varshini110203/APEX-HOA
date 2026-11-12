@@ -1,0 +1,205 @@
+import { create } from 'zustand';
+import workflowAPI from '../api/workflowAPI';
+import { REQUIRED_FIELD } from '../config/constants';
+import { getERPSystem } from '../utils/envHelper';
+
+const defaultTab = REQUIRED_FIELD[getERPSystem()]?.["Settings"]?.[0] || 'Vendor Based Workflow';
+
+const useWorkflowStore = create((set, get) => ({
+    // Vendor Workflow State
+    vendorWorkflows: [],
+    vendorLoading: false,
+    vendorError: null,
+    workflowVendors: [], // Eligible vendors for rules
+    vendorSearchLoading: false,
+    approversList: [],
+
+    // Codification Workflow State
+    codificationWorkflows: [],
+    codificationLoading: false,
+    codificationError: null,
+    lobsList: [],
+    departmentsList: [],
+
+    // Shared UI State
+    activeTab: defaultTab,
+    searchQuery: '',
+
+    // Actions
+    setActiveTab: (tab) => set({ activeTab: tab, searchQuery: '' }),
+    setSearchQuery: (query) => set({ searchQuery: query }),
+
+    // Fetch Vendor Workflows
+    fetchVendorWorkflows: async () => {
+        set({ vendorLoading: true, vendorError: null });
+        try {
+            const data = await workflowAPI.getVendorWorkflows();
+            set({ vendorWorkflows: data, vendorLoading: false });
+        } catch (err) {
+            set({ vendorError: err.response?.data?.detail || err.message, vendorLoading: false });
+        }
+    },
+
+    // Fetch Metadata for Vendor Workflow (Table labels)
+    fetchVendorMetadata: async () => {
+        try {
+            const [approvers, vendors] = await Promise.all([
+                workflowAPI.getApprovers(),
+                workflowAPI.getWorkflowVendors()
+            ]);
+            set({
+                approversList: (approvers || []).map(a => ({ 
+                    value: a.value, 
+                    label: a.label,
+                    department: a.department
+                })),
+                workflowVendors: vendors || []
+            });
+        } catch (err) {
+            console.error('Failed to fetch vendor table metadata', err);
+        }
+    },
+
+    searchWorkflowVendors: async (search) => {
+        set({ vendorSearchLoading: true });
+        try {
+            const vendors = await workflowAPI.getWorkflowVendors(search);
+            set({ workflowVendors: vendors || [], vendorSearchLoading: false });
+        } catch (err) {
+            console.error('Failed to search vendors', err);
+            set({ vendorSearchLoading: false });
+        }
+    },
+
+    // CRUD Vendor Workflow
+    addVendorWorkflow: async (data) => {
+        try {
+            const newWorkflow = await workflowAPI.createVendorWorkflow(data);
+            set((state) => ({
+                vendorWorkflows: [...state.vendorWorkflows, newWorkflow]
+            }));
+            return newWorkflow;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    updateVendorWorkflow: async (id, data) => {
+        try {
+            const updated = await workflowAPI.updateVendorWorkflow(id, data);
+            set((state) => ({
+                vendorWorkflows: state.vendorWorkflows.map((w) => (w.id === id ? updated : w))
+            }));
+            return updated;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    deleteVendorWorkflow: async (id) => {
+        try {
+            await workflowAPI.deleteVendorWorkflow(id);
+            set((state) => ({
+                vendorWorkflows: state.vendorWorkflows.filter((w) => w.id !== id)
+            }));
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    // Fetch Codification Workflows
+    fetchCodificationWorkflows: async () => {
+        set({ codificationLoading: true, codificationError: null });
+        try {
+            const data = await workflowAPI.getCodificationWorkflows();
+            set({ codificationWorkflows: data, codificationLoading: false });
+        } catch (err) {
+            set({ codificationError: err.response?.data?.detail || err.message, codificationLoading: false });
+        }
+    },
+
+    // Fetch Metadata for Codification Workflow
+    fetchCodificationMetadata: async () => {
+        try {
+            const [lobs, depts, approvers] = await Promise.all([
+                workflowAPI.getLobs(),
+                workflowAPI.getDepartments(),
+                workflowAPI.getApprovers()
+            ]);
+            set({ 
+                lobsList: (lobs || []).map(l => ({ 
+                    value: typeof l === 'string' ? l : (l.value || l.lob_id || l.id), 
+                    label: typeof l === 'string' ? l : (l.label || l.lob_name || l.name || (l.value || l.lob_id || l.id))
+                })), 
+                departmentsList: (depts || []).map(d => ({ 
+                    value: typeof d === 'string' ? d : (d.value || d.dept_id || d.id), 
+                    label: typeof d === 'string' ? d : (d.label || d.dept_name || d.name || (d.value || d.dept_id || d.id))
+                })), 
+                approversList: (approvers || []).map(a => ({ 
+                    value: a.value, 
+                    label: a.label,
+                    department: a.department
+                })) 
+            });
+        } catch (err) {
+            console.error('Failed to fetch codification metadata', err);
+        }
+    },
+
+    // CRUD Codification Workflow
+    addCodificationWorkflow: async (data) => {
+        try {
+            const newWorkflow = await workflowAPI.createCodificationWorkflow(data);
+            set((state) => ({
+                codificationWorkflows: [...state.codificationWorkflows, newWorkflow]
+            }));
+            return newWorkflow;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    updateCodificationWorkflow: async (id, data) => {
+        try {
+            const updated = await workflowAPI.updateCodificationWorkflow(id, data);
+            set((state) => ({
+                codificationWorkflows: state.codificationWorkflows.map((w) => (w.id === id ? updated : w))
+            }));
+            return updated;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    deleteCodificationWorkflow: async (id) => {
+        try {
+            await workflowAPI.deleteCodificationWorkflow(id);
+            set((state) => ({
+                codificationWorkflows: state.codificationWorkflows.filter((w) => w.id !== id)
+            }));
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    // Filter Logic
+    getFilteredData: () => {
+        const { activeTab, vendorWorkflows, codificationWorkflows, searchQuery } = get();
+        const query = searchQuery.toLowerCase();
+
+        if (activeTab === 'Vendor Based Workflow') {
+            return vendorWorkflows.filter(w => 
+                w.vendor_name?.toLowerCase().includes(query) || 
+                w.vendor_id?.toLowerCase().includes(query)
+            );
+        } else if (activeTab === 'Codification Based Workflow') {
+             return codificationWorkflows.filter(w => 
+                w.lob?.toLowerCase().includes(query) || 
+                w.department_id?.toLowerCase().includes(query)
+            );
+        }
+        return [];
+    }
+}));
+
+export default useWorkflowStore;

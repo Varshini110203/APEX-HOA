@@ -1,0 +1,467 @@
+import API from "./api";
+
+const ENTITY_IDENTIFIER = 'Entity_Master';
+const VENDOR_IDENTIFIER = 'Vendor_Master';
+const TDS_IDENTIFIER = 'TDS_Rates';
+const GL_IDENTIFIER = 'GL';
+const LOB_IDENTIFIER = 'LOB';
+const DEPARTMENT_IDENTIFIER = 'Department';
+const CUSTOMER_IDENTIFIER = 'Customer';
+const ITEM_IDENTIFIER = 'Item';
+const CURRENCY_IDENTIFIER = 'Currency';
+const EXCHANGE_RATE_IDENTIFIER = 'Exchange_Rate';
+
+export const masterDataService = {
+    /** Generic Paginated Fetch for any Master Data tab */
+    async getMasterData(identifier, params = {}) {
+        const res = await API.get(`/master/sheet/${identifier}`, {
+            params: {
+                page: params.page || 1,
+                page_size: params.page_size || 100,
+                search: params.search || undefined,
+                filters: params.filters ? JSON.stringify(params.filters) : undefined,
+                sort_by: params.sort_by || undefined,
+                sort_dir: params.sort_dir || undefined
+            }
+        });
+        return res.data;
+    },
+    
+    /** Fetch unique values for a column to populate filter dropdowns */
+    async getFilterOptions(identifier, column, search = '', limit = 10) {
+        const res = await API.get(`/master/sheet/${identifier}/filter-options`, {
+            params: { column, search, limit }
+        });
+        return res.data;
+    },
+
+
+
+    /** Fetch all entity master rows from DB */
+    async getEntityMasterData(params = {}) {
+        return this.getMasterData(ENTITY_IDENTIFIER, params);
+    },
+
+    /** Add a new entity master row */
+    async addEntityRow(newRow) {
+        const res = await API.post(`/master/sheet/${ENTITY_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing entity master row (backend uses updated_row.id to find the record) */
+    async editEntityRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${ENTITY_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a row by its list index (backend uses offset-based lookup) */
+    async deleteEntityRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${ENTITY_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload an entity master file */
+    async uploadEntityMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: ENTITY_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── Vendor Master ───────────────────────────────────────────────────────
+    /** Fetch all vendor master rows from DB (Supports pagination) */
+    async getVendorMasterData(params = {}) {
+        return this.getMasterData(VENDOR_IDENTIFIER, params);
+    },
+
+    /** Fetch all exchange rate master rows from DB */
+    async getExchangeRateData(params = {}) {
+        return this.getMasterData(EXCHANGE_RATE_IDENTIFIER, params);
+    },
+
+    /** Upload a vendor master file */
+    async uploadVendorMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: VENDOR_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    /** Add a new vendor master row */
+    async addVendorRow(newRow) {
+        const res = await API.post(`/master/sheet/${VENDOR_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing vendor master row */
+    async editVendorRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${VENDOR_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a vendor row */
+    async deleteVendorRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${VENDOR_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Add a new exchange rate row */
+    async addExchangeRateRow(newRow) {
+        const res = await API.post(`/master/sheet/${EXCHANGE_RATE_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing exchange rate row */
+    async editExchangeRateRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${EXCHANGE_RATE_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete an exchange rate row */
+    async deleteExchangeRateRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${EXCHANGE_RATE_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    // ─── TDS Rates ──────────────────────────────────────────────────────────
+    /** Fetch all TDS rates from DB */
+    async getTDSRatesData(params = {}) {
+        return this.getMasterData(TDS_IDENTIFIER, params);
+    },
+
+    /** Add a new TDS rate row */
+    async addTDSRateRow(newRow) {
+        const res = await API.post(`/master/sheet/${TDS_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing TDS rate row */
+    async editTDSRateRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${TDS_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a TDS rate row */
+    async deleteTDSRateRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${TDS_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload a TDS rates file */
+    async uploadTDSRatesData(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: TDS_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── GL Master ──────────────────────────────────────────────────────────
+    /** Fetch all GL master rows from DB */
+    async getGLMasterData(params = {}) {
+        return this.getMasterData(GL_IDENTIFIER, params);
+    },
+
+    /** Add a new GL master row */
+    async addGLRow(newRow) {
+        const res = await API.post(`/master/sheet/${GL_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing GL master row */
+    async editGLRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${GL_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a GL row */
+    async deleteGLRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${GL_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload a GL master file */
+    async uploadGLMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: GL_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── LOB Master ──────────────────────────────────────────────────────────
+    /** Fetch all LOB master rows from DB */
+    async getLOBMasterData(params = {}) {
+        return this.getMasterData(LOB_IDENTIFIER, params);
+    },
+
+    /** Add a new LOB master row */
+    async addLOBRow(newRow) {
+        const res = await API.post(`/master/sheet/${LOB_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing LOB master row */
+    async editLOBRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${LOB_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a LOB row */
+    async deleteLOBRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${LOB_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload an LOB master file */
+    async uploadLOBMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: LOB_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── Department Master ──────────────────────────────────────────────────
+    /** Fetch all Department master rows from DB */
+    async getDepartmentMasterData(params = {}) {
+        return this.getMasterData(DEPARTMENT_IDENTIFIER, params);
+    },
+
+    /** Add a new Department master row */
+    async addDepartmentRow(newRow) {
+        const res = await API.post(`/master/sheet/${DEPARTMENT_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing Department master row */
+    async editDepartmentRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${DEPARTMENT_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a Department row */
+    async deleteDepartmentRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${DEPARTMENT_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload a Department master file */
+    async uploadDepartmentMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: DEPARTMENT_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── Customer Master ────────────────────────────────────────────────────
+    /** Fetch all Customer master rows from DB */
+    async getCustomerMasterData(params = {}) {
+        return this.getMasterData(CUSTOMER_IDENTIFIER, params);
+    },
+
+    /** Add a new Customer master row */
+    async addCustomerRow(newRow) {
+        const res = await API.post(`/master/sheet/${CUSTOMER_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing Customer master row */
+    async editCustomerRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${CUSTOMER_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete a Customer row */
+    async deleteCustomerRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${CUSTOMER_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload a Customer master file */
+    async uploadCustomerMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: CUSTOMER_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    // ─── Item Master ────────────────────────────────────────────────────────
+    /** Fetch all Item master rows from DB */
+    async getItemMasterData(params = {}) {
+        return this.getMasterData(ITEM_IDENTIFIER, params);
+    },
+
+    /** Add a new Item master row */
+    async addItemRow(newRow) {
+        const res = await API.post(`/master/sheet/${ITEM_IDENTIFIER}/add`, { new_row: newRow });
+        return res.data;
+    },
+
+    /** Edit an existing Item master row */
+    async editItemRow(rowIndex, updatedRow) {
+        const res = await API.patch(`/master/sheet/${ITEM_IDENTIFIER}/edit`, {
+            row_index: rowIndex,
+            updated_row: updatedRow,
+        });
+        return res.data;
+    },
+
+    /** Delete an Item row */
+    async deleteItemRow(rowIndex) {
+        const res = await API.delete(`/master/sheet/${ITEM_IDENTIFIER}/delete`, {
+            params: { row_index: rowIndex },
+        });
+        return res.data;
+    },
+
+    /** Upload an Item master file */
+    async uploadItemMaster(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await API.post(`/master/upload`, formData, {
+            params: { tab_name: ITEM_IDENTIFIER },
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        return res.data;
+    },
+
+    /** Delete all data for a specific tab */
+    async deleteTabData(tabName) {
+        const identifier = tabName === 'Entity Master' ? ENTITY_IDENTIFIER
+            : tabName === 'Vendor Master' ? VENDOR_IDENTIFIER
+                : tabName === 'TDS Rates' ? TDS_IDENTIFIER
+                    : tabName === 'GL Master' ? GL_IDENTIFIER
+                        : tabName === 'LOB Master' ? LOB_IDENTIFIER
+                            : tabName === 'Department Master' ? DEPARTMENT_IDENTIFIER
+                                : tabName === 'Customer Master' ? CUSTOMER_IDENTIFIER
+                                    : tabName === 'Item Master' ? ITEM_IDENTIFIER
+                                        : tabName === 'Exchange Rate Master' ? EXCHANGE_RATE_IDENTIFIER : tabName;
+        const res = await API.delete(`/master/files/${identifier}`);
+        return res.data;
+    },
+
+    /** Sync data for a specific tab */
+    async syncTabData(tabName) {
+        let identifier = tabName === 'Entity Master' ? ENTITY_IDENTIFIER
+            : tabName === 'Vendor Master' ? VENDOR_IDENTIFIER
+                : tabName === 'TDS Rates' ? TDS_IDENTIFIER
+                    : tabName === 'GL Master' ? GL_IDENTIFIER
+                        : tabName === 'LOB Master' ? LOB_IDENTIFIER
+                            : tabName === 'Department Master' ? DEPARTMENT_IDENTIFIER
+                                : tabName === 'Customer Master' ? CUSTOMER_IDENTIFIER
+                                    : tabName === 'Item Master' ? ITEM_IDENTIFIER
+                                        : tabName === 'Exchange Rate Master' ? EXCHANGE_RATE_IDENTIFIER
+                                            : tabName === 'Currency' ? CURRENCY_IDENTIFIER : tabName;
+        // Fix for sync identifiers if needed, based on backend config
+        const res = await API.post(`/master/sync/${identifier}`);
+        return res.data;
+    },
+
+    // ─── Currency ──────────────────────────────────────────────────────────
+    /** Fetch all currencies from DB */
+    /** Fetch all currency codes from DB with pagination */
+    async getCurrencyData(params = {}) {
+        return this.getMasterData(CURRENCY_IDENTIFIER, params);
+    },
+
+    /** Add a new currency row */
+    async addCurrencyRow(newRow) {
+        const res = await API.post(`/currency/`, newRow);
+        return res.data;
+    },
+
+    /** Edit an existing currency row */
+    async editCurrencyRow(currencyId, updatedRow) {
+        const res = await API.put(`/currency/${currencyId}`, updatedRow);
+        return res.data;
+    },
+
+    /** Delete a currency row */
+    async deleteCurrencyRow(currencyId) {
+        const res = await API.delete(`/currency/${currencyId}`);
+        return res.data;
+    },
+
+    /** Fetch a specific exchange rate based on base, target and date */
+    async getExchangeRate(base, target, date) {
+        const res = await API.get(`/currency/exchange-rate`, {
+            params: {
+                base_currency: base,
+                target_currency: target,
+                invoice_date: date
+            }
+        });
+        return res.data;
+    },
+};
+
+/**
+ * Fetches GL, LOB, Department, Customer, and Item master data in ONE request.
+ * Used by CodingTab to eliminate 5 separate API round-trips on mount.
+ */
+export const fetchBulkCodingData = async (pageSize = 2000) => {
+    const res = await API.get(`/master/bulk-coding-data`, {
+        params: { page_size: pageSize }
+    });
+    return res.data;
+};
+

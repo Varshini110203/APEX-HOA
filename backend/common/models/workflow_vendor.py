@@ -1,0 +1,65 @@
+from typing import Optional, List, Union
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, field_validator
+
+
+class VendorWorkflow(BaseModel):
+    vendor_name: Optional[str] = None
+    vendor_id: Optional[str] = None
+    mandatory_approver_1: Optional[Union[EmailStr, List[EmailStr]]] = None
+    mandatory_approver_2: Optional[Union[EmailStr, List[EmailStr]]] = None
+    mandatory_approver_3: Optional[Union[EmailStr, List[EmailStr]]] = None
+    mandatory_approver_4: Optional[Union[EmailStr, List[EmailStr]]] = None
+    mandatory_approver_5: Optional[Union[EmailStr, List[EmailStr]]] = None
+    threshold_approver: Optional[Union[EmailStr, List[EmailStr]]] = None
+    amount_threshold: Optional[float] = None
+    approver_count: int = 1
+    is_threshold_enabled: bool = False          # ── ADD
+    posting_approver: Optional[List[EmailStr]] = None  # ── multi-select
+    approver_flags: Optional[dict] = None        # ── ADD
+    # is_parallel: bool = False
+
+    entity: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    @field_validator(
+        'mandatory_approver_1', 'mandatory_approver_2', 'mandatory_approver_3',
+        'mandatory_approver_4', 'mandatory_approver_5',
+        'threshold_approver', 'posting_approver',
+        mode='before'
+    )
+    @classmethod
+    def empty_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
+
+class VendorWorkflowInDB(VendorWorkflow):
+    id: str
+
+
+class VendorWorkflowResponse(BaseModel):
+    id: int
+    vendor_name: Optional[str] = None
+    vendor_id: Optional[str] = None
+    mandatory_approver_1: Optional[Union[str, List[str]]] = None
+    mandatory_approver_2: Optional[Union[str, List[str]]] = None
+    mandatory_approver_3: Optional[Union[str, List[str]]] = None
+    mandatory_approver_4: Optional[Union[str, List[str]]] = None
+    mandatory_approver_5: Optional[Union[str, List[str]]] = None
+    threshold_approver: Optional[Union[str, List[str]]] = None
+    amount_threshold: Optional[float] = None
+    approver_count: int
+    is_threshold_enabled: bool = False          # ── ADD
+    posting_approver: Optional[List[str]] = None  # ── multi-select
+    approver_flags: Optional[dict] = None       # ── ADD
+    # is_parallel: bool = False
+
+    entity: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

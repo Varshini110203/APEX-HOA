@@ -1,0 +1,276 @@
+import { getERPSystem } from "./envHelper";
+
+const roundTo2 = (num) => Math.round((num + Number.EPSILON) * 100) / 100;
+
+const normalizeItems = (items) => {
+    return items.map((item, index) => ({
+        id: `${index}`,
+        qty: Number(item.quantity?.value || 0),
+        unitPrice: Number(item.unit_price?.value || 0),
+        discount: Number(0),
+        netAmount: Number(item.amount?.value || 0),
+        description: item.description?.value || "",
+        taxAmt: 0,
+
+        lineType: "",
+        glCode: "",
+        lob: "",
+        department: "",
+        customer: "",
+        item: "",
+    }));
+};
+
+// const calculateNetAmount = (row) => {
+//     const qty = Number(row.qty || 0);
+//     const unitPrice = Number(row.unitPrice || 0);
+//     const discount = Number(row.discount || 0);
+
+//     return (qty * unitPrice) - discount;
+// };
+
+
+const calculateNetAmount = (row) => {
+    const qty = Number(row.qty || 0);
+    const unitPrice = Number(row.unitPrice || 0);
+    const discount = Number(row.discount || 0);
+    const netAmount = Number(row.netAmount || 0);
+
+    //  Case 1: Only when both exist → calculate
+    if (qty > 0 && unitPrice > 0) {
+        return roundTo2((qty * unitPrice) - discount);
+    }
+
+    //  Case 2: Everything missing → trust invoice value
+    return netAmount;
+};
+const mergeIntoFirstRow = (data) => {
+    if (!data || data.length === 0) return [];
+
+    const updatedData = JSON.parse(JSON.stringify(data));
+
+    //  sum all rows
+    const totalNetAmount = updatedData.reduce((sum, row) => {
+        return sum + Number(row.netAmount || 0);
+    }, 0);
+
+    const totalQty = updatedData.reduce((sum, row) => {
+        return sum + Number(row.qty || 0);
+    }, 0);
+
+    const totalUnitPrice = updatedData.reduce((sum, row) => {
+        return sum + Number(row.unitPrice || 0);
+    }, 0);
+
+    const totalDiscount = updatedData.reduce((sum, row) => {
+        return sum + Number(row.discount || 0);
+    }, 0);
+
+    //  update first row
+    updatedData[0].netAmount = totalNetAmount;
+    updatedData[0].qty = totalQty;
+    updatedData[0].unitPrice = totalUnitPrice;
+    updatedData[0].discount = totalDiscount;
+
+    return [updatedData[0]]; // only one grouped row
+};
+
+const addSystemRows = (rows, formData, entityMaster, activeInvoiceData) => {
+
+    let result = [...rows];
+
+    //  GST
+    const isGstDeleted = formData?.isGstDeleted === true || formData?.isGstDeleted === "true";
+    const isGstApplicable = entityMaster?.gst_applicable === true && !isGstDeleted;
+    if (isGstApplicable) {
+        const gstValue = Number(formData?.totalTaxAmount || 0);
+        const gstLabel = getERPSystem() === "Zoho" ? "Total VAT" : "Total GST";
+
+        let gstCoding = { glCode: "", lob: "", department: "", customer: "", item: "", lineType: "Expense" };
+        if (activeInvoiceData) {
+            const items = activeInvoiceData?.extracted_data?.Items?.value || [];
+            const existingGst = items.find(item => {
+                const desc = item.description?.value || item.description || "";
+                return item.is_system_row === true || item.isSystemRow === true ||
+                       item.type === "GST" || item.row_type === "GST" ||
+                       desc === "Total GST" || desc === "Total VAT" || desc === "Total Tax";
+            });
+            if (existingGst) {
+                gstCoding = {
+                    glCode: existingGst.gl_code?.value ?? existingGst.glCode ?? "",
+                    lob: existingGst.lob?.value ?? existingGst.lob ?? "",
+                    department: existingGst.department?.value ?? existingGst.department ?? "",
+                    customer: existingGst.customer?.value ?? existingGst.customer ?? "",
+                    item: existingGst.item?.value ?? existingGst.item ?? "",
+                    lineType: existingGst.line_type?.value ?? existingGst.lineType ?? "Expense",
+                };
+            }
+        }
+
+        const gstRow = {
+            id: "gst-row",
+            type: "GST",
+            description: gstLabel,
+            qty: 1,
+            unitPrice: gstValue,
+            discount: 0,
+            netAmount: gstValue,
+            taxAmt: 0,
+            isSystemRow: true,
+
+            lineType: gstCoding.lineType,
+            glCode: gstCoding.glCode,
+            lob: gstCoding.lob,
+            department: gstCoding.department,
+            customer: gstCoding.customer,
+            item: gstCoding.item,
+        };
+
+        result.push(gstRow);
+    }
+    //  TDS (only if applicable)
+    const isEntityGstApplicable = entityMaster?.gst_applicable === true;
+    const isTdsApplicable = isEntityGstApplicable && (formData?.tds_applicability || formData?.tdsApplicability === "Yes");
+    const tdsRate = Number(formData?.tds_percentage || formData?.tdsRate || 0);
+    const totalInvoiceAmount = Number(formData?.totalInvoiceAmount || 0);
+
+    if (isTdsApplicable) {
+        const tdsValue = roundTo2(-Math.abs((tdsRate) * totalInvoiceAmount));
+
+        let tdsCoding = { glCode: "", lob: "", department: "", customer: "", item: "", lineType: "Expense" };
+        if (activeInvoiceData) {
+            const items = activeInvoiceData?.extracted_data?.Items?.value || [];
+            const existingTds = items.find(item => {
+                const desc = item.description?.value || item.description || "";
+                return item.is_system_row === true || item.isSystemRow === true ||
+                       item.type === "TDS" || item.row_type === "TDS" ||
+                       desc === "TDS Deduction";
+            });
+            if (existingTds) {
+                tdsCoding = {
+                    glCode: existingTds.gl_code?.value ?? existingTds.glCode ?? "",
+                    lob: existingTds.lob?.value ?? existingTds.lob ?? "",
+                    department: existingTds.department?.value ?? existingTds.department ?? "",
+                    customer: existingTds.customer?.value ?? existingTds.customer ?? "",
+                    item: existingTds.item?.value ?? existingTds.item ?? "",
+                    lineType: existingTds.line_type?.value ?? existingTds.lineType ?? "Expense",
+                };
+            }
+        }
+
+        const tdsRow = {
+            id: "tds-row",
+            type: "TDS",
+            description: "TDS Deduction",
+            qty: 1,
+            unitPrice: tdsValue,
+            discount: 0,
+            netAmount: tdsValue,
+            taxAmt: 0,
+            isSystemRow: true,
+
+            lineType: tdsCoding.lineType,
+            glCode: tdsCoding.glCode,
+            lob: tdsCoding.lob,
+            department: tdsCoding.department,
+            customer: tdsCoding.customer,
+            item: tdsCoding.item,
+        };
+
+        result.push(tdsRow);
+    }
+    return result;
+};
+
+const loadLineItemTable = (props) => {
+    const { activeInvoiceData, quickViewFormData, isVendorChanged, entityMaster, storeOriginalLineItems } = props;
+
+    const isSaved = activeInvoiceData?.extracted_data?.isModified || false;
+    const isLineGroupingEnabled = quickViewFormData?.lineGrouping === "Yes";
+
+    let baseItems = [];
+
+    //  CASE 1: Not saved → normal flow from extracted Items
+    if (!isSaved) {
+        if (storeOriginalLineItems && storeOriginalLineItems.length > 0) {
+            baseItems = storeOriginalLineItems.map(row => ({
+                ...row,
+                netAmount: calculateNetAmount(row)
+            }));
+        } else {
+            const extracted_items = activeInvoiceData?.extracted_data?.Items?.value || [];
+            baseItems = normalizeItems(extracted_items).map(row => ({
+                ...row,
+                netAmount: calculateNetAmount(row)
+            }));
+        }
+    }
+    //  CASE 2: Saved + vendor changed → MUST recompute from OriginalItems
+    else if (isVendorChanged) {
+        const originals = activeInvoiceData?.extracted_data?.OriginalItems?.value || [];
+        baseItems = normalizeItems(originals).map(row => ({
+            ...row,
+            netAmount: calculateNetAmount(row)
+        }));
+    }
+    //  CASE 3: Saved + NO vendor change
+    else {
+        const snapshot = activeInvoiceData?.extracted_data?.lineItemsSnapshot || [];
+        const originals = activeInvoiceData?.extracted_data?.OriginalItems?.value || [];
+
+        // If user wants grouping, we MUST use OriginalItems because the snapshot might be already grouped or partially modified.
+        if (isLineGroupingEnabled) {
+            baseItems = normalizeItems(originals).map(row => ({
+                ...row,
+                netAmount: calculateNetAmount(row)
+            }));
+        } else {
+            // If user does NOT want grouping:
+            // Check if the snapshot is currently grouped (only 1 non-system row) while originals has many.
+            // If so, we MUST use originals to "un-group".
+            const nonSystemSnapshot = snapshot.filter(item => !item.isSystemRow);
+            const isSnapshotGrouped = nonSystemSnapshot.length === 1 && originals.length > 1;
+
+            const hasUserModifiedSnapshot =
+                snapshot.length !== originals.length;
+
+            if (isSnapshotGrouped && !hasUserModifiedSnapshot) {
+                baseItems = normalizeItems(originals).map(row => ({
+                    ...row,
+                    netAmount: calculateNetAmount(row)
+                }));
+            } else {
+                // Snapshot is already un-grouped or it's the only data we have.
+                // Map snake_case to camelCase and filter out system rows.
+                baseItems = snapshot
+                    .filter(item => !item.isSystemRow)
+                    .map((item, index) => ({
+                        ...item,
+                        id: item.id || `snap-${index}`,
+                        qty: item.qty ?? item.quantity ?? 0,
+                        unitPrice: item.unitPrice ?? item.unit_price ?? 0,
+                        netAmount: item.netAmount ?? item.net_amount ?? 0,
+                        lineType: item.lineType ?? item.line_type ?? "Expense",
+                        glCode: item.glCode ?? item.gl_code ?? "",
+                        lob: item.lob ?? "",
+                        department: item.department ?? "",
+                        customer: item.customer ?? "",
+                        item: item.item ?? "",
+                        discount: item.discount ?? 0,
+                        taxAmt: item.taxAmt ?? 0
+                    }));
+            }
+        }
+    }
+
+    //  ALWAYS apply derived logic (Grouping + System Rows)
+    let processedRows = isLineGroupingEnabled
+        ? mergeIntoFirstRow(baseItems)
+        : baseItems;
+
+    const finalData = addSystemRows(processedRows, quickViewFormData, entityMaster, activeInvoiceData);
+
+    return finalData;
+};
+
+export default loadLineItemTable

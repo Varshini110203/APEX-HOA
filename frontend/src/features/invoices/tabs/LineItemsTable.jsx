@@ -1,0 +1,426 @@
+import { useState } from "react";
+import { PlusOutlined, DownloadOutlined, UploadOutlined, CaretUpOutlined, CaretDownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import { Trash2 } from "lucide-react";
+import { Modal, Tooltip } from "antd";
+import WorkflowTab from "./WorkflowTab";
+import { getERPSystem } from "../../../utils/envHelper";
+import ReusableDataTable from '../../../shared/components/ReusableDataTable' // adjust path
+import { formatCurrency } from '../../../utils/formatters'
+
+const LINE_TYPE_OPTIONS = ["Expense", "Revenue", "Asset", "Liability"];
+const GL_CODE_OPTIONS = ["GL-001", "GL-002", "GL-003", "GL-004"];
+const LOB_OPTIONS = ["LOB-A", "LOB-B", "LOB-C"];
+const DEPARTMENT_OPTIONS = ["Finance", "Operations", "HR", "IT"];
+const CUSTOMER_OPTIONS = ["Customer A", "Customer B", "Customer C"];
+const ITEM_OPTIONS = ["Item 1", "Item 2", "Item 3"];
+
+const defaultRow = () => ({
+    id: Date.now(),
+    description: "",
+    lineType: "Expense",
+    quantity: 0,
+    unitPrice: 0,
+    netAmount: 0,
+    glCode: "",
+    lob: "",
+    department: "",
+    customer: "",
+    item: "",
+});
+
+/* ── Shared cell styles ── */
+const inputCls =
+    "w-full border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-800 focus:outline-none focus:border-blue-400 bg-white";
+const selectCls =
+    "w-full border border-gray-200 rounded px-2 py-1 text-[13px] text-gray-700 focus:outline-none focus:border-blue-400 bg-white appearance-none cursor-pointer";
+
+/* ── Editable cell renderers ── */
+const TextCell = ({ value, onChange }) => (
+    <input
+        className={inputCls}
+        value={value}
+        title={value}
+        onChange={(e) => onChange(e.target.value)}
+    />
+);
+
+const NumberCell = ({ value, onChange, prefix }) => (
+    <div className="flex items-center border border-gray-200 rounded overflow-hidden bg-white focus-within:border-blue-400">
+        {prefix && (
+            <span className="px-2 text-[13px] text-gray-500 border-r border-gray-200 bg-gray-50">
+                {prefix}
+            </span>
+        )}
+        <input
+            type="number"
+            className="w-full px-2 py-1 text-[13px] text-gray-800 focus:outline-none bg-transparent"
+            value={value}
+            onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
+        />
+    </div>
+);
+
+const SelectCell = ({ value, onChange, options }) => (
+    <div className="relative">
+        <select className={selectCls} value={value} title={value} onChange={(e) => onChange(e.target.value)}>
+            <option value="">Select</option>
+            {options.map((o) => (
+                <option key={o} value={o}>{o}</option>
+            ))}
+        </select>
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">▼</span>
+    </div>
+);
+
+const LineItemsTable = () => {
+    const [modal, modalContextHolder] = Modal.useModal();
+    const [isWorkflowModalOpen, setIsWorkflowModalOpen] = useState(false);
+    const [rows, setRows] = useState([
+        { id: 1, description: "Innova - 56 trip", lineType: "Expense", quantity: 0, unitPrice: 0, netAmount: 0, glCode: "", lob: "", department: "", customer: "", item: "" },
+        { id: 2, description: "Small car - (11am&12", lineType: "Expense", quantity: 0, unitPrice: 0, netAmount: 0, glCode: "", lob: "", department: "", customer: "", item: "" },
+        { id: 3, description: "Extra kmtr - 999*13", lineType: "Expense", quantity: 0, unitPrice: 0, netAmount: 0, glCode: "", lob: "", department: "", customer: "", item: "" },
+        { id: 4, description: "INNOVA-4TRIP", lineType: "Expense", quantity: 0, unitPrice: 0, netAmount: 0, glCode: "", lob: "", department: "", customer: "", item: "" },
+        { id: 5, description: "SMALLCAR-1TRIP", lineType: "Expense", quantity: 0, unitPrice: 0, netAmount: 0, glCode: "", lob: "", department: "", customer: "", item: "" },
+        { id: 6, description: getERPSystem() === "Zoho" ? "Total VAT (Ineligible)" : "Total GST (Ineligible)", lineType: "Expense", quantity: 1, unitPrice: 31, netAmount: 31, glCode: "", lob: "", department: "", customer: "", item: "" },
+    ]);
+
+    const [selectedRows, setSelectedRows] = useState(new Set(rows.map((r) => r.id)));
+    const [allChecked, setAllChecked] = useState(true);
+
+    const updateRow = (id, field, value) => {
+        setRows((prev) =>
+            prev.map((row) => {
+                if (row.id !== id) return row;
+                const updated = { ...row, [field]: value };
+                if (field === "quantity" || field === "unitPrice") {
+                    updated.netAmount = updated.quantity * updated.unitPrice;
+                }
+                return updated;
+            })
+        );
+    };
+
+    const toggleRow = (id) => {
+        setSelectedRows((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleAll = () => {
+        if (allChecked) {
+            setSelectedRows(new Set());
+            setAllChecked(false);
+        } else {
+            setSelectedRows(new Set(rows.map((r) => r.id)));
+            setAllChecked(true);
+        }
+    };
+
+    const addRow = () => {
+        const newRow = defaultRow();
+        setRows((prev) => [...prev, newRow]);
+        setSelectedRows((prev) => new Set([...prev, newRow.id]));
+    };
+
+    const deleteRow = (id) => {
+        console.log("LineItemsTable deleteRow triggered for ID:", id);
+        modal.confirm({
+            title: 'Delete Row?',
+            className: "premium-delete-modal",
+            icon: <ExclamationCircleOutlined />,
+            content: (
+                <div>
+                    <p>Are you sure you want to delete this row?</p>
+                    <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '16px' }}>
+                        This row will be removed from the line items table.
+                    </p>
+                </div>
+            ),
+            okText: 'Delete Row',
+            okType: 'danger',
+            cancelText: 'Cancel',
+            centered: true,
+            onOk: () => {
+                console.log("Row deletion confirmed for ID:", id);
+                setRows((prev) => prev.filter((r) => r.id !== id));
+                setSelectedRows((prev) => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            },
+        });
+    };
+
+    const AutocompleteCell = ({ value, onChange, options }) => {
+        const [input, setInput] = useState(value);
+        const [open, setOpen] = useState(false);
+        const filtered = options.filter(o => o.toLowerCase().includes(input.toLowerCase()));
+        return (
+            <div style={{ position: "relative" }}>
+                <input className={inputCls} value={input}
+                    onChange={e => { setInput(e.target.value); setOpen(true); }}
+                    onFocus={() => setOpen(true)}
+                    onBlur={() => setTimeout(() => setOpen(false), 150)}
+                />
+                {open && filtered.length > 0 && (
+                    <div className="ac-dropdown">
+                        {filtered.map(o => (
+                            <div key={o} onMouseDown={() => { setInput(o); onChange(o); setOpen(false); }}>{o}</div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
+    /* ── Column definitions for ReusableDataTable ── */
+    const isZoho = getERPSystem() === "Zoho";
+    const columnDefs = [
+        {
+            field: "checkbox",
+            headerName: "",
+            width: 48,
+            headerComponent: () => (
+                <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={toggleAll}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer"
+                />
+            ),
+            cellRenderer: ({ data }) => (
+                <input
+                    type="checkbox"
+                    checked={selectedRows.has(data.id)}
+                    onChange={() => toggleRow(data.id)}
+                    className="w-4 h-4 accent-blue-600 cursor-pointer"
+                />
+            ),
+            sortable: false,
+        },
+        {
+            field: "sno",
+            headerName: "S.No",
+            width: 64,
+            cellRenderer: ({ data }) => {
+                const index = rows.findIndex(r => r.id === data.id);
+                return <span>{index + 1}</span>;
+            },
+            sortable: false,
+        },
+        {
+            field: "description",
+            headerName: "Description",
+            flex: 1,
+            minWidth: 180,
+            cellRenderer: ({ data }) => (
+                <TextCell
+                    value={data.description}
+                    onChange={(v) => updateRow(data.id, "description", v)}
+                />
+            ),
+        },
+        {
+            field: "lineType",
+            headerName: "Line Type",
+            width: 160,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.lineType}
+                    onChange={(v) => updateRow(data.id, "lineType", v)}
+                    options={LINE_TYPE_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "quantity",
+            headerName: "Quantity",
+            width: 110,
+            cellRenderer: ({ data }) => (
+                <NumberCell
+                    value={data.quantity}
+                    onChange={(v) => updateRow(data.id, "quantity", v)}
+                />
+            ),
+        },
+        {
+            field: "unitPrice",
+            headerName: "Unit Price",
+            width: 130,
+            cellRenderer: ({ data }) => (
+                <div className="text-[13px] text-gray-800 px-2">
+                    {formatCurrency(data.unitPrice)}
+                </div>
+            ),
+        },
+        {
+            field: "netAmount",
+            headerName: "Net Amount",
+            width: 130,
+            cellRenderer: ({ data }) => (
+                <div className="text-[13px] text-gray-800 px-2">
+                    {formatCurrency(data.netAmount)}
+                </div>
+            ),
+        },
+        {
+            field: "glCode",
+            headerName: "GL Code",
+            width: 130,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.glCode}
+                    onChange={(v) => updateRow(data.id, "glCode", v)}
+                    options={GL_CODE_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "lob",
+            headerName: "LOB",
+            width: 120,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.lob}
+                    onChange={(v) => updateRow(data.id, "lob", v)}
+                    options={LOB_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "department",
+            headerName: "Department",
+            width: 140,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.department}
+                    onChange={(v) => updateRow(data.id, "department", v)}
+                    options={DEPARTMENT_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "customer",
+            headerName: "Customer",
+            width: 140,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.customer}
+                    onChange={(v) => updateRow(data.id, "customer", v)}
+                    options={CUSTOMER_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "item",
+            headerName: "Item",
+            width: 130,
+            cellRenderer: ({ data }) => (
+                <SelectCell
+                    value={data.item}
+                    onChange={(v) => updateRow(data.id, "item", v)}
+                    options={ITEM_OPTIONS}
+                />
+            ),
+        },
+        {
+            field: "action",
+            headerName: "Action",
+            width: 80,
+            sortable: false,
+            cellRenderer: ({ data }) => (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        console.log("LineItemsTable Delete icon clicked for ID:", data.id);
+                        deleteRow(data.id);
+                    }}
+                    className="text-red-400 hover:text-red-600 transition-colors p-1 rounded hover:bg-red-50"
+                >
+                    <Trash2 size={15} />
+                </button>
+            ),
+        },
+    ].filter(col => {
+        if (isZoho && ["lob", "department", "customer", "item"].includes(col.field)) {
+            return false;
+        }
+        return true;
+    });
+
+    return (
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+            {modalContextHolder}
+
+            {/* ── Section header ── */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+                <div className="flex items-center gap-2 text-[14px] font-medium text-gray-700 cursor-pointer">
+                    <CaretUpOutlined className="text-gray-500 text-[11px]" />
+                    Line Items
+                </div>
+                <div className="flex items-center gap-2 flex-nowrap">
+                    <button className="flex items-center justify-center gap-1.5 w-[120px] py-1.5 text-[13px] border border-gray-300 rounded hover:bg-gray-50 text-gray-600 transition-colors whitespace-nowrap">
+                        <DownloadOutlined style={{ fontSize: 13 }} />
+                        Export
+                    </button>
+                    <button className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] border border-gray-300 rounded hover:bg-gray-50 text-gray-600 transition-colors whitespace-nowrap">
+                        <UploadOutlined style={{ fontSize: 13 }} />
+                        Import from Excel
+                    </button>
+                    <Tooltip title="View Workflow">
+                        <InfoCircleOutlined
+                            className="text-blue-500 cursor-pointer hover:text-blue-600 transition-colors ml-1"
+                            style={{ fontSize: 16 }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsWorkflowModalOpen(true);
+                            }}
+                        />
+                    </Tooltip>
+                </div>
+            </div>
+
+            <Modal
+                title={<div className="text-center font-bold text-[#2F5D7C] text-[16px]">Invoice Workflow</div>}
+                open={isWorkflowModalOpen}
+                onCancel={() => setIsWorkflowModalOpen(false)}
+                footer={null}
+                width={600}
+                centered
+                styles={{ 
+                    header: { padding: '20px 24px', borderBottom: '1px solid #f0f0f0', margin: 0, textAlign: 'center' }, 
+                    body: { padding: 0 } 
+                }}
+            >
+                <div className="w-full">
+                    <WorkflowTab />
+                </div>
+            </Modal>
+
+            {/* ── Table ── */}
+            <ReusableDataTable
+                columnDefs={columnDefs}
+                data={rows}
+                searchText=""
+                tableHeader={false}
+                tableSearch={false}
+                defaultPageSize={50}
+                shouldUseFlex={false}
+            />
+
+            {/* ── Add Line Item footer ── */}
+            <div
+                onClick={addRow}
+                className="flex items-center justify-center gap-2 py-3 border-t border-gray-200 text-[13px] text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors"
+            >
+                <PlusOutlined style={{ fontSize: 13 }} />
+                Add Line Item
+            </div>
+        </div>
+    );
+};
+
+export default LineItemsTable;

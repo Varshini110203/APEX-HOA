@@ -1,0 +1,55 @@
+import API from '../services/api';
+
+// Admin service methods
+export const adminService = {
+  async getAllUsers(params = {}) {
+    const response = await API.get('/users/', { params });
+    return response.data;
+  },
+
+  async updateUserRole(userId, role, status, department) {
+    const response = await API.put(`/users/${userId}/role`, { role, status, department });
+    return response.data;
+  },
+
+  async addUser(userData) {
+    const response = await API.post('/users/', userData);
+    return response.data;
+  },
+
+  async deleteUser(userId) {
+    const response = await API.delete(`/users/${userId}/`);
+    return response.data;
+  },
+
+  async getSettings() {
+    const response = await API.get('/settings/');
+    return response.data;
+  },
+
+  async updateSettings(settings) {
+    const response = await API.put('/settings/', settings);
+    return response.data;
+  },
+
+  // Delegation methods
+  async getDelegations(params = {}) {
+    const response = await API.get('/delegations/', { params });
+    return response.data;
+  },
+
+  async createDelegation(payload) {
+    const response = await API.post('/delegations/', payload);
+    return response.data;
+  },
+
+  async deleteDelegation(id) {
+    const response = await API.delete(`/delegations/${id}`);
+    return response.data;
+  },
+
+  async getApprovers() {
+    const response = await API.get('/workflow-config/approvers');
+    return response.data;
+  }
+};
