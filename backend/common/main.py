@@ -83,6 +83,15 @@ async def startup_event():
         # Check database connection exists without modifying schema
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+            # Ensure new columns exist
+            try:
+                col_check = conn.execute(text("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE LOWER(TABLE_NAME) = 'invoices' AND LOWER(COLUMN_NAME) = 'request_id'")).scalar()
+                if col_check == 0:
+                    conn.execute(text("ALTER TABLE invoices ADD request_id NVARCHAR(50) NULL"))
+                    conn.commit()
+                    print("✓ Added request_id column to invoices table")
+            except Exception as mig_err:
+                print(f"Note on migration: {mig_err}")
         print("✓ Database connection verified successfully")
     except Exception as e:
         print(f"✗ Database connection failed: {e}")
