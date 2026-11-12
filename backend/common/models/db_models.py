@@ -120,6 +120,7 @@ class Invoice(Base):
     # Vendor information
     vendor_id = Column(String(100), ForeignKey(
         "vendor_master.vendor_id"), nullable=True, index=True)
+    vendor_code = Column(String(100), nullable=True, index=True)
     vendor_name = Column(String(500), nullable=True, index=True)
     invoice_number = Column(String(200), nullable=True, index=True)
     reference_number = Column(String(255), nullable=True, index=True)
@@ -134,6 +135,16 @@ class Invoice(Base):
     invoice_date = Column(Date, nullable=True, index=True)
     due_date = Column(Date, nullable=True, index=True)
     posting_date = Column(Date, nullable=True, index=True)
+
+    # HOA / AP specific fields
+    payment_terms = Column(String(100), nullable=True)
+    payment_method = Column(String(50), nullable=True)
+    any_fee_applicable = Column(String(10), nullable=True)
+    fee_amount = Column(DECIMAL(18, 2), nullable=True)
+    expense_type = Column(String(100), nullable=True)
+    payment_reference = Column(String(255), nullable=True)
+    expense_category = Column(String(100), nullable=True)
+    loan_number = Column(String(100), nullable=True)
 
     # JSON fields (stored as NVARCHAR(MAX))
     extracted_data = Column(Text, nullable=True)  # JSON

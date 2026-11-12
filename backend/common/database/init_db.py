@@ -106,6 +106,15 @@ def create_tables(engine_obj, base_obj):
             _add_column_if_not_exists(conn, "customer_master", "billing_city", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "attachments", "NVARCHAR(MAX) NULL")
             _add_column_if_not_exists(conn, "invoices", "request_id", "NVARCHAR(50) NULL")
+            _add_column_if_not_exists(conn, "invoices", "vendor_code", "NVARCHAR(100) NULL")
+            _add_column_if_not_exists(conn, "invoices", "payment_terms", "NVARCHAR(100) NULL")
+            _add_column_if_not_exists(conn, "invoices", "payment_method", "NVARCHAR(50) NULL")
+            _add_column_if_not_exists(conn, "invoices", "any_fee_applicable", "NVARCHAR(10) NULL")
+            _add_column_if_not_exists(conn, "invoices", "fee_amount", "DECIMAL(18, 2) NULL")
+            _add_column_if_not_exists(conn, "invoices", "expense_type", "NVARCHAR(100) NULL")
+            _add_column_if_not_exists(conn, "invoices", "payment_reference", "NVARCHAR(255) NULL")
+            _add_column_if_not_exists(conn, "invoices", "expense_category", "NVARCHAR(100) NULL")
+            _add_column_if_not_exists(conn, "invoices", "loan_number", "NVARCHAR(100) NULL")
 
             # Explicitly commit the changes
             conn.commit()

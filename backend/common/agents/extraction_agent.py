@@ -608,7 +608,12 @@ Extract and return ALL available information in this EXACT JSON format:
         "po_number": "string or null",
         "payment_terms": "string or null",
         "payment_method": "string or null",
-        "cost_center": "string or null"
+        "cost_center": "string or null",
+        "payment_reference": "string or null",
+        "expense_type": "string or null",
+        "expense_category": "string or null",
+        "loan_number": "string or null",
+        "any_fee_applicable": "string or null"
     }},
     "service_period": {{
         "start_date": "YYYY-MM-DD or null",
@@ -628,7 +633,8 @@ Extract and return ALL available information in this EXACT JSON format:
         "total_invoice_amount": number or null,
         "amount_paid": number or null,
         "amount_due": number or null,
-        "previous_unpaid_balance": number or null
+        "previous_unpaid_balance": number or null,
+        "fee_amount": number or null
     }},
     "additional_info": {{
         "notes_terms": "string or null",
@@ -719,6 +725,11 @@ Return ONLY the JSON object. No explanations, no markdown formatting, just pure 
                 "type": None,
                 "payment_method": None,
                 "cost_center": None,
+                "payment_reference": None,
+                "expense_type": None,
+                "expense_category": None,
+                "loan_number": None,
+                "any_fee_applicable": None,
             },
             "service_period": {
                 "start_date": "ServiceStartDate",
@@ -739,6 +750,7 @@ Return ONLY the JSON object. No explanations, no markdown formatting, just pure 
                 "SSCL": None,
                 "withholding_tax": None,
                 "amount_paid": "AmountPaid",
+                "fee_amount": None,
             },
             "additional_info": {
                 "notes_terms": None,
@@ -754,9 +766,9 @@ Return ONLY the JSON object. No explanations, no markdown formatting, just pure 
         section_fields = {
             "vendor_info": ["name", "address", "tax_id", "phone", "country", "contact_email", "bank_name", "bank_account_number", "bank_details", "contact_person", "website"],
             "client_info": ["name", "billing_address", "shipping_address", "tax_id", "phone", "email", "contact_person"],
-            "invoice_details": ["invoice_number", "invoice_date", "due_date", "po_number", "payment_terms", "currency", "type", "payment_method", "cost_center"],
+            "invoice_details": ["invoice_number", "invoice_date", "due_date", "po_number", "payment_terms", "currency", "type", "payment_method", "cost_center", "payment_reference", "expense_type", "expense_category", "loan_number", "any_fee_applicable"],
             "service_period": ["start_date", "end_date"],
-            "amounts": ["subtotal", "total_tax_amount", "total_invoice_amount", "amount_due", "previous_unpaid_balance", "shipping_handling_fees", "surcharges", "tax_type_breakdown", "CGST", "SGST", "IGST", "SSCL", "withholding_tax", "amount_paid"],
+            "amounts": ["subtotal", "total_tax_amount", "total_invoice_amount", "amount_due", "previous_unpaid_balance", "shipping_handling_fees", "surcharges", "tax_type_breakdown", "CGST", "SGST", "IGST", "SSCL", "withholding_tax", "amount_paid", "fee_amount"],
             "additional_info": ["notes_terms", "qr_code_irn", "company_registration_number"]
         }
 
