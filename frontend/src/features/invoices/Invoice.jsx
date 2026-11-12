@@ -65,7 +65,10 @@ const Invoice = () => {
     const navigate = useNavigate();
 
     const user = useAuthStore((state) => state.user);
-    const userRole = user?.role?.toLowerCase();
+    const activeRole = useAuthStore((state) => state.activeRole);
+    const currentRole = (activeRole || user?.role || '').toLowerCase();
+    const isHoaUser = currentRole.split(',').map(r => r.trim()).some(r => r === 'hoa user' || r === 'hoa_user' || r === 'hoa');
+    const userRole = currentRole;
 
     const backendFilters = useMemo(() => {
         const filters = {};
@@ -507,7 +510,7 @@ const Invoice = () => {
                                     className="!w-auto !h-10 px-4"
                                 />
                             </div>
-                            {(userRole === 'hoa user' || userRole === 'hoa_user' || userRole === 'hoa') && pageTab === 'in_progress' && (
+                            {isHoaUser && pageTab === 'in_progress' && (
                                 <div style={{ flexShrink: 0 }}>
                                     <CustomButton
                                         variant="primary"

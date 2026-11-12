@@ -38,9 +38,12 @@ const AddInvoiceModal = ({
     const [requestId, setRequestId]           = useState(null);
     const [idCopied, setIdCopied]             = useState(false);
 
-    // Reset state when modal is closed
+    // Auto-generate Request ID when modal opens, and reset when closed
     useEffect(() => {
-        if (!open) {
+        if (open) {
+            setRequestId(generateRequestId());
+            setIdCopied(false);
+        } else {
             setFiles([]);
             setAttachments([]);
             setRequestId(null);

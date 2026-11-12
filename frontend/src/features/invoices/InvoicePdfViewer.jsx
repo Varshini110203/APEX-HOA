@@ -1,8 +1,7 @@
 import { useInvoiceStore } from "../../store/invoice.store";
 import { useInvoicePdf } from "../hooks/useInvoicePdf";
 import { Spin } from "antd";
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useRef } from "react";
 
 // Custom Hooks
 import { usePdfRenderer } from "./hooks/usePdfRenderer";
@@ -15,25 +14,7 @@ import PdfPlaceholder from "./components/PdfPlaceholder";
 
 const InvoicePdfViewer = () => {
     const { fileName, viewInvoiceId, highlightedField, activeInvoiceData } = useInvoiceStore();
-    const queryClient = useQueryClient();
-    const [canLoadPdf, setCanLoadPdf] = useState(false);
-
-    // Reset when invoice changes
-    useEffect(() => {
-        setCanLoadPdf(false);
-    }, [viewInvoiceId]);
-
-    const isPreviewFetching = useIsFetching({ queryKey: ["invoice-preview", viewInvoiceId] });
-
-    useEffect(() => {
-        if (isPreviewFetching === 0) {
-            const queries = queryClient.getQueryCache().findAll({ queryKey: ["invoice-preview", viewInvoiceId] });
-            const isSettled = queries.length > 0 && queries.some(q => q.state.status === "success" || q.state.status === "error");
-            if (isSettled) {
-                setCanLoadPdf(true);
-            }
-        }
-    }, [isPreviewFetching, viewInvoiceId, queryClient]);
+    const canLoadPdf = Boolean(viewInvoiceId);
 
     // Data Hooks
     const { data: pdfBlob, isLoading: isPdfLoading } = useInvoicePdf(viewInvoiceId, canLoadPdf);
@@ -148,11 +129,11 @@ const InvoicePdfViewer = () => {
                     pdfObj ? "block" : "flex justify-center items-start"
                 } ${cursorClass}`}
             >
-                {(!canLoadPdf || isPdfLoading || isRendering) && (
+                {(isPdfLoading || isRendering) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#FDFDFD]/80 z-50 backdrop-blur-sm">
                         <Spin size="large" />
                         <span className="mt-4 text-[12px] font-bold text-[#101828] tracking-widest uppercase animate-pulse">
-                            {!canLoadPdf ? "WAITING FOR DATA..." : isRendering ? "RENDERING PAGE..." : "FETCHING DOCUMENT..."}
+                            {isRendering ? "RENDERING PAGE..." : "FETCHING DOCUMENT..."}
                         </span>
                     </div>
                 )}
@@ -169,7 +150,7 @@ const InvoicePdfViewer = () => {
                         />
                     </div>
                 ) : (
-                    <PdfPlaceholder isPdfLoading={isPdfLoading || !canLoadPdf} />
+                    <PdfPlaceholder isPdfLoading={isPdfLoading} />
                 )}
             </div>
         </div>

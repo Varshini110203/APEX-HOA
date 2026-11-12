@@ -824,13 +824,10 @@ async def upload_invoices(
             new_invoice.status_history.append(processed_history)
             task_db.commit()
 
-            # ---- DELETE LOCAL FILE (already safely in Azure Blob) ----
-            try:
-                if file_path and os.path.exists(file_path):
-                    os.remove(file_path)
-                    print(f"[Backend] Deleted local file after successful processing: {file_path}")
-            except Exception as del_err:
-                print(f"[Backend] Warning: Could not delete local file {file_path}: {del_err}")
+            # Keep local copy if Azure blob upload wasn't confirmed or as cache
+            # (only delete local file if Azure blob definitely has it and works)
+            # Keeping the local file ensures PDF is always viewable on the left side
+            # ---- KEEP LOCAL FILE FOR INSTANT PDF VIEWER DISPLAY ----
 
             await emit_progress("processing", f"[{index}/{total_files}] Completed processing {clean_name}!", progress=100)
 
@@ -971,9 +968,19 @@ async def upload_invoices(
         db.commit()
         db.refresh(new_invoice)
 
-        try:
-            if os.path.exists(file_path): os.remove(file_path)
-        except: pass
+        # Store pdf_binary in RawExtractionData if primary attachment is a PDF
+        if att_clean.lower().endswith(".pdf"):
+            try:
+                raw_record = RawExtractionData(
+                    invoice_id=new_invoice.id,
+                    pdf_binary=contents,
+                    raw_azure_response=serialize_json_field({}),
+                )
+                raw_extraction_repo.create(db, obj_in=raw_record)
+            except Exception as r_err:
+                print(f"[Backend] Note: {r_err}")
+
+        # Keep local file on disk so it can always be served to the PDF viewer
 
         return {
             "count": 1,
@@ -2151,8 +2158,42 @@ async def get_invoice_pdf(
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     file_path = invoice.file_path
+    resolved_path = None
     
-    # Try streaming from Azure Blob directly to avoid CORS preflight issues
+    # 1. First priority: Check if local file exists on disk (instant 0ms response)
+    if file_path:
+        check_path = file_path if os.path.isabs(file_path) else os.path.join(os.getcwd(), file_path)
+        if os.path.exists(check_path):
+            resolved_path = check_path
+        else:
+            filename = os.path.basename(file_path)
+            found_path = find_file_in_any_folder(filename)
+            if found_path and os.path.exists(found_path):
+                resolved_path = found_path
+
+    if resolved_path and os.path.exists(resolved_path):
+        return FileResponse(
+            path=resolved_path,
+            media_type="application/pdf",
+            filename=invoice.original_filename or "invoice.pdf"
+        )
+
+    # 2. Second priority: Check RawExtractionData for stored pdf_binary
+    try:
+        raw_rec = db.query(RawExtractionData).filter(RawExtractionData.invoice_id == invoice_id).first()
+        if raw_rec and raw_rec.pdf_binary:
+            from fastapi import Response
+            return Response(
+                content=raw_rec.pdf_binary,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{invoice.original_filename or 'invoice.pdf'}\""
+                }
+            )
+    except Exception as raw_err:
+        logger.warning(f"Failed to retrieve pdf_binary from RawExtractionData: {raw_err}")
+
+    # 3. Third priority: Try streaming from Azure Blob Storage
     from common.services.azure_blob import container_client, get_blob_name_from_path
     blob_name = get_blob_name_from_path(file_path)
     try:
@@ -2169,30 +2210,33 @@ async def get_invoice_pdf(
             )
     except Exception as e:
         logger.error(f"Failed to stream blob {blob_name} from Azure: {e}")
-    
-    # Fallback to serving local file if blob stream fails
-    # Ensure path is absolute/resolvable
-    if file_path and not os.path.isabs(file_path):
-        base_dir = os.getcwd()
-        full_path = os.path.join(base_dir, file_path)
-        if os.path.exists(full_path):
-            file_path = full_path
 
-    if not file_path or not os.path.exists(file_path):
-        # Fallback: try to find it in any subfolder
-        filename = os.path.basename(file_path) if file_path else (invoice.filename)
-        found_path = find_file_in_any_folder(filename)
-        if found_path:
-            file_path = found_path
+    # 4. Fourth priority: Check attachments for any available PDF file
+    if invoice.attachments:
+        try:
+            import json as _json
+            att_list = _json.loads(invoice.attachments) if isinstance(invoice.attachments, str) else (invoice.attachments or [])
+            for att in att_list:
+                att_path = att.get("file_path")
+                if att_path and os.path.exists(att_path):
+                    return FileResponse(
+                        path=att_path,
+                        media_type="application/pdf",
+                        filename=att.get("filename") or invoice.original_filename or "invoice.pdf"
+                    )
+                att_fn = att.get("filename")
+                if att_fn and att_fn.lower().endswith(".pdf"):
+                    found_att = find_file_in_any_folder(att_fn)
+                    if found_att and os.path.exists(found_att):
+                        return FileResponse(
+                            path=found_att,
+                            media_type="application/pdf",
+                            filename=att_fn
+                        )
+        except Exception as att_err:
+            logger.warning(f"Failed to check attachments for PDF: {att_err}")
 
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"PDF file not found")
-
-    return FileResponse(
-        path=file_path,
-        media_type="application/pdf",
-        filename=invoice.original_filename or "invoice.pdf"
-    )
+    raise HTTPException(status_code=404, detail="PDF file not found")
 
 @router.put("/{invoice_id}/status")
 async def update_invoice_status(
