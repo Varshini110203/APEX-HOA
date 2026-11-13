@@ -8,7 +8,7 @@ export const REQUIRED_FIELD = {
             "Customer Master"
         ],
         "Settings": [
-            "Vendor Based Workflow",
+            // "Vendor Based Workflow",
             "Reminder Settings"
         ],
         "Admin": [
@@ -31,8 +31,8 @@ export const REQUIRED_FIELD = {
             "Exchange Rate Master"
         ],
         "Settings": [
-            "Vendor Based Workflow",
-            "Codification Based Workflow",
+            // "Vendor Based Workflow",
+            // "Codification Based Workflow",
             "Reminder Settings"
         ],
         "Admin": [

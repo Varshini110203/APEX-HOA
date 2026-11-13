@@ -6,7 +6,7 @@ const EditAccessModal = ({ roleName, onClose }) => {
     const [isOpen, setIsOpen] = useState(false);
     
     // Standard labels that must always be available
-    const standardLabels = ['Dashboard', 'Invoices', 'Master Data', 'Settings', 'Admin'];
+    const standardLabels = ['Dashboard', 'Coding', 'Invoices', 'Approvals', 'Master Data', 'Settings', 'Admin'];
     
     // Get all unique labels from navigation and merge with standard ones
     const allLabels = Array.from(new Set([

@@ -209,6 +209,7 @@ def create_default_settings(db):
         "statuses": ["active", "pending", "rejected"],
         "navigation": [
             {"label": "Dashboard", "path": "/dashboard", "roles": ["all"]},
+            {"label": "Coding", "path": "/coding", "roles": ["AP USER"]},
             {"label": "Invoices", "path": "/invoices", "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]},
             {"label": "Approvals", "path": "/approvals", "roles": ["HOA APPROVER", "AP APPROVER"]},
             {"label": "Master Data", "path": "/master-data", "roles": ["admin"]},

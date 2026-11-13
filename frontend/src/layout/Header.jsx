@@ -27,6 +27,7 @@ import { getERPSystem } from '../utils/envHelper';
 
 const tabs = [
     { name: 'Dashboard', route: '/dashboard', selectIcon: dashboardSelectIcon, unselectIcon: dashboardUnselectIcon },
+    { name: 'Coding', route: '/coding', selectIcon: codingSelectIcon, unselectIcon: codingUnselectIcon },
     { name: 'Invoices', route: '/invoices', selectIcon: invoiceSelectIcon, unselectIcon: invoiceUnselectIcon },
     { name: 'Master Data', route: '/master-data', selectIcon: masterDataSelectIcon, unselectIcon: masterDataUnselectIcon },
     { name: 'Settings', route: '/settings', selectIcon: settingsSelectIcon, unselectIcon: settingsUnselectIcon },
@@ -94,9 +95,11 @@ const Header = () => {
         const role = targetRole.toLowerCase();
         if (role === 'admin') {
             targetRoute = '/dashboard';
+        } else if (role.includes('ap user') || role === 'coder' || (role.includes('ap') && !role.includes('approver'))) {
+            targetRoute = '/coding';
         } else if (role.includes('approver')) {
             targetRoute = '/approvals';
-        } else if (role.includes('user') || role === 'coder') {
+        } else if (role.includes('user')) {
             targetRoute = '/invoices';
         }
 
@@ -122,7 +125,13 @@ const Header = () => {
         const currentRole = (activeRole || '').toLowerCase();
         const userDept = user?.department?.toLowerCase() || '';
 
-        const filtered = navigation
+        // Ensure Coding tab is present in navigation list for AP users if not in navigation
+        let navItems = [...navigation];
+        if (!navItems.some(nav => nav.label === 'Coding' || nav.path === '/coding')) {
+            navItems.splice(1, 0, { label: 'Coding', path: '/coding', roles: ['AP USER'] });
+        }
+
+        const filtered = navItems
             .filter(nav => {
                 // Check if role has access
                 const roles = nav.roles || [];
@@ -131,6 +140,11 @@ const Header = () => {
                 // Show Master Data and Settings for scanner, coder, and user roles as well
                 if ((nav.label === 'Master Data' || nav.label === 'Settings') && (currentRole === 'scanner' || currentRole === 'coder' || currentRole.includes('user'))) {
                     return true;
+                }
+
+                // Show Coding tab for AP user / coder
+                if (nav.label === 'Coding') {
+                    return currentRole.includes('ap user') || currentRole === 'coder' || (currentRole.includes('ap') && !currentRole.includes('approver'));
                 }
 
                 // Do not display Approvals tab for admin
