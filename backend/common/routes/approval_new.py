@@ -1506,6 +1506,14 @@ async def approve_invoice(
         _update_invoice_status(db, invoice, InvoiceStatus.WAITING_CODING)
         db.commit()
         logger.info(f"[Workflow] Invoice {invoice_id} approved by HOA Approver {current_user.username}. Moved to waiting_coding.")
+
+        # --- STAGE 2: TRIGGER EMAIL TO AP USER (CODING) ---
+        background_tasks.add_task(
+            email_service.notify_stage_ap_users,
+            invoice_id=invoice_id,
+            approved_by=current_user.username or "HOA Approver"
+        )
+
         return ActionResponse(
             success=True,
             message="HOA Approved successfully. Request moved to AP Coder for codification.",
@@ -1568,6 +1576,15 @@ async def approve_invoice(
                 entity=entity,
             )
             db.commit()
+
+            # --- TRIGGER NOTIFICATION: INVOICE APPROVED & POSTED ---
+            background_tasks.add_task(
+                email_service.notify_stage_invoice_approved,
+                invoice_id=invoice_id,
+                approved_by=current_user.username or "AP Approver",
+                bill_number=sage_result.get("sage_bill_number")
+            )
+
             return ActionResponse(
                 success=True,
                 message=f"Invoice fully approved and posted to {erp_name}.",
@@ -2134,6 +2151,15 @@ async def reject_invoice(
             details={"comment": payload.comment}
         )
         db.commit()
+
+        # Trigger rejection email to submitter
+        background_tasks.add_task(
+            email_service.notify_stage_invoice_rejected,
+            invoice_id=invoice_id,
+            rejected_by=current_user.username or "HOA Approver",
+            comment=payload.comment
+        )
+
         return ActionResponse(
             success=True,
             message="Invoice has been rejected by HOA Approver.",
@@ -2164,6 +2190,15 @@ async def reject_invoice(
             details={"comment": payload.comment}
         )
         db.commit()
+
+        # Trigger rejection email to submitter and coder
+        background_tasks.add_task(
+            email_service.notify_stage_invoice_rejected,
+            invoice_id=invoice_id,
+            rejected_by=current_user.username or "AP Approver",
+            comment=payload.comment
+        )
+
         return ActionResponse(
             success=True,
             message="Invoice has been rejected by AP Approver.",
@@ -2321,6 +2356,16 @@ async def rework_invoice(
             details={"comment": payload.comment, "rework_to": "hoa_user"}
         )
         db.commit()
+
+        # Trigger rework email to HOA User
+        background_tasks.add_task(
+            email_service.notify_stage_invoice_reworked,
+            invoice_id=invoice_id,
+            reworked_by=current_user.username or "HOA Approver",
+            comment=payload.comment,
+            rework_to="HOA User"
+        )
+
         return ActionResponse(
             success=True,
             message="Invoice returned to HOA User for rework.",
@@ -2350,6 +2395,16 @@ async def rework_invoice(
             details={"comment": payload.comment, "rework_to": "ap_coder"}
         )
         db.commit()
+
+        # Trigger rework email to AP Coder
+        background_tasks.add_task(
+            email_service.notify_stage_invoice_reworked,
+            invoice_id=invoice_id,
+            reworked_by=current_user.username or "AP Approver",
+            comment=payload.comment,
+            rework_to="AP User"
+        )
+
         return ActionResponse(
             success=True,
             message="Invoice returned to AP Coder for codification rework.",

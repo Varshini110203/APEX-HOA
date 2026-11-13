@@ -3353,7 +3353,11 @@ async def update_invoice(
         invoice.validation_results = serialize_json_field(merged_validation)
 
     # Status transition logic
-    if "status" in update_data and update_data["status"] == InvoiceStatusEnum.WAITING_APPROVAL:
+    new_status_str = str(update_data.get("status", "")).lower()
+    if "status" in update_data and (
+        update_data["status"] == InvoiceStatusEnum.WAITING_APPROVAL or 
+        new_status_str in ("waiting_approval", "waiting_ap_approval")
+    ):
          from common.routes.workflow import get_vendor_data_from_invoice, get_required_approver_count, get_invoice_total_from_invoice
          from common.models.db_models import User
          from common.repository.repositories import invoice_assigned_approver_repo
@@ -3494,6 +3498,13 @@ async def update_invoice(
             ))
             db.commit()
             logger.info(f"[Workflow] Recorded HOA User submission for invoice {invoice_id} by {current_user.username}")
+
+            # --- STAGE 1: TRIGGER EMAIL TO HOA APPROVER ---
+            background_tasks.add_task(
+                email_service.notify_stage_hoa_approvers,
+                invoice_id=invoice_id,
+                submitted_by=current_user.username or "HOA User"
+            )
         elif new_st in ("waiting_ap_approval", "waiting_approval"):
             last_step = db.query(WorkflowStep).filter(
                 WorkflowStep.invoice_id == invoice_id
@@ -3511,24 +3522,12 @@ async def update_invoice(
                 db.commit()
                 logger.info(f"[Workflow] Recorded AP User codification for invoice {invoice_id} by {current_user.username}")
 
-        # --- TRIGGER LEVEL 1 EMAIL NOTIFICATION ---
-        if 'level_1_emails' in locals() and level_1_emails:
-            for next_email in level_1_emails:
-                if not next_email: continue
-                
-                # Fetch username for personal touch if possible
-                approver_user = db.query(User).filter(User.email == next_email).first()
-                approver_name = approver_user.username if approver_user else "Approver"
-                
-                background_tasks.add_task(
-                    email_service.send_approval_request_email,
-                    email=next_email,
-                    username=approver_name,
-                    vendor_name=invoice.vendor_name or "Unknown",
-                    invoice_number=invoice.invoice_number or "N/A",
-                    amount=str(invoice.total_amount),
-                    currency=currency if 'currency' in locals() else "USD"
-                )
+            # --- STAGE 3: TRIGGER EMAIL TO AP APPROVER ---
+            background_tasks.add_task(
+                email_service.notify_stage_ap_approvers,
+                invoice_id=invoice_id,
+                coded_by=current_user.username or "AP User"
+            )
 
     # --- Auto-Coding Suggestions on transition to waiting_coding ---
     # When an invoice is sent to coding, automatically apply AI-based GL suggestions
