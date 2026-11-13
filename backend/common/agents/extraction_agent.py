@@ -92,33 +92,47 @@ class InvoiceExtractionAgent:
                 timeout=120
             )
             
-            if not result.documents:
-                raise ValueError("No invoice found in the document")
+            content_text = (getattr(result, 'content', '') or '').strip()
+            raw_lower = content_text.lower()
+            is_check_or_cheque = any(kw in raw_lower for kw in [
+                "check", "cheque", "pay to the order", "routing", "account",
+                "dollars", "bank", "transit", "memo", "payment"
+            ])
 
-            # Validate that it actually has critical invoice fields
-            doc = result.documents[0]
-            fields = doc.fields if hasattr(doc, 'fields') else {}
-            
-            valid_fields = []
-            for name, field in fields.items():
-                val = None
-                if hasattr(field, 'value') and field.value is not None:
-                    val = field.value
-                elif hasattr(field, 'content') and field.content:
-                    val = field.content
-                if val is not None and str(val).strip() != "":
-                    valid_fields.append(name)
-                    
-            has_vendor = any(f in valid_fields for f in ["VendorName", "SupplierName", "RemittanceAdviceVendorName", "VendorAddress"])
-            has_invoice_id = any(f in valid_fields for f in ["InvoiceId", "InvoiceNumber", "TaxInvoiceNo", "TaxInvoiceNumber", "CustomerImportNumber"])
-            has_date = any(f in valid_fields for f in ["InvoiceDate", "DateOfInvoice", "Date", "ServiceStartDate", "ServiceEndDate", "DueDate"])
-            has_total = any(f in valid_fields for f in ["InvoiceTotal", "SubTotal", "AmountDue", "TotalAmount", "TotalTax"])
-            
-            # Require at least one core element or valid fields
-            core_elements_count = sum([has_vendor, has_invoice_id, has_date, has_total])
-            
-            if core_elements_count < 1 and len(valid_fields) == 0:
-                raise ValueError("No invoice found in the document")
+            if not result.documents:
+                if is_check_or_cheque or len(content_text) > 10:
+                    print(f"No prebuilt-invoice documents detected by Azure, but document content exists (is_check={is_check_or_cheque}). Proceeding to LLM enhancement.")
+                else:
+                    raise ValueError("No invoice found in the document")
+            else:
+                # Validate that it actually has critical invoice fields or check content
+                doc = result.documents[0]
+                fields = doc.fields if hasattr(doc, 'fields') else {}
+                
+                valid_fields = []
+                for name, field in fields.items():
+                    val = None
+                    if hasattr(field, 'value') and field.value is not None:
+                        val = field.value
+                    elif hasattr(field, 'content') and field.content:
+                        val = field.content
+                    if val is not None and str(val).strip() != "":
+                        valid_fields.append(name)
+                        
+                has_vendor = any(f in valid_fields for f in ["VendorName", "SupplierName", "RemittanceAdviceVendorName", "VendorAddress"])
+                has_invoice_id = any(f in valid_fields for f in ["InvoiceId", "InvoiceNumber", "TaxInvoiceNo", "TaxInvoiceNumber", "CustomerImportNumber"])
+                has_date = any(f in valid_fields for f in ["InvoiceDate", "DateOfInvoice", "Date", "ServiceStartDate", "ServiceEndDate", "DueDate"])
+                has_total = any(f in valid_fields for f in ["InvoiceTotal", "SubTotal", "AmountDue", "TotalAmount", "TotalTax"])
+                
+                # Require at least one core element or valid fields, or check/cheque text
+                core_elements_count = sum([has_vendor, has_invoice_id, has_date, has_total])
+                
+                if core_elements_count < 1 and len(valid_fields) == 0:
+                    if is_check_or_cheque or len(content_text) > 10:
+                        print(f"Few prebuilt invoice fields found by Azure, but document content exists (is_check={is_check_or_cheque}). Proceeding to LLM enhancement.")
+                    else:
+                        raise ValueError("No invoice found in the document")
+
 
             duration = time.time() - start_time
             print(f"Azure Document Intelligence Extraction took {duration:.2f}s")
@@ -549,22 +563,32 @@ CRITICAL: DO NOT extract or modify line items. They are handled separately by Az
 
 DOCUMENT PAGE COUNT: {page_count}
 
-IMPORTANT CLASSIFICATION RULES:
-1. Carefully check if the document itself is actually a commercial invoice, tax invoice, utility/commercial bill, or receipt.
-   - You MUST read the RAW INVOICE CONTEXT first to classify the document type.
-   - If the document is a SINGLE-PAGE document (DOCUMENT PAGE COUNT: 1) and contains a check, cheque, accounts payable cheque, bank cheque, check request / cheque request, cheque payment details, payment instructions, a cheque payment slip, or the word "cheque" / "check" as part of a check form/request, you MUST set "is_invoice" to false and restrict it.
-   - If the document contains MULTIPLE pages (DOCUMENT PAGE COUNT > 1) and any page contains a cheque, accounts payable cheque, bank cheque, check, cheque request / check request, cheque payment details, payment instructions, a cheque payment slip, or the word "cheque" / "check", you MUST set "is_invoice" to true and allow/process the document. Do NOT classify a multi-page document as a non-invoice just because one or more of its pages contains a cheque.
-   - If the raw text indicates it is a user guide, training document, manual, guideline, tutorial, walkthrough, payslip, salary slip, payroll document, agreement, blood report, medical report, lab report, clinical report, or other non-invoice document (and does not contain multiple pages with a cheque), set "is_invoice" to false. Do this even if the structured Azure fields contain extracted data.
-2. If and only if the document is classified as a valid invoice/bill ("is_invoice": true), use the structured Azure fields as the PRIMARY evidence for extracting the other fields.
+IMPORTANT CLASSIFICATION & EXTRACTION RULES:
+1. Carefully check the document type from the RAW INVOICE CONTEXT and structured fields:
+   - Commercial invoices, tax invoices, utility/commercial bills, receipts, purchase invoices, debit/credit notes, AND CHECKS / CHEQUES (including bank cheques, accounts payable cheques, payroll cheques, cashier's checks, check payment slips, check vouchers, check requests, whether single-page or multi-page) ARE ALL VALID DOCUMENTS TO PROCESS. For any invoice, bill, receipt, or cheque/check, you MUST set "is_invoice": true.
+   - CHEQUES / CHECKS ARE FULLY ALLOWED AND MUST BE PROCESSED ("is_invoice": true). Do NOT reject or restrict any cheque or check, whether it is single-page or multi-page.
+   - When extracting from a Check / Cheque document:
+     * Set "is_invoice": true.
+     * Extract the check/cheque number as "invoice_details.invoice_number" (check number printed on top-right or MICR line) and in "invoice_details.payment_reference".
+     * Extract the check date as "invoice_details.invoice_date".
+     * Extract the payee ("Pay to the order of", beneficiary, recipient) as "vendor_info.name".
+     * Extract the payer/issuer (account holder, company or individual writing the check) as "client_info.name" and "client_info.billing_address".
+     * Extract the check amount (numeric amount or amount in words) as "amounts.total_invoice_amount" and "amounts.amount_due".
+     * Set "invoice_details.payment_method" to "Check" (or "Cheque").
+     * Set "invoice_details.type" to "Check" (or "Cheque").
+     * Extract any memo or payment purpose in "invoice_details.memo" or "vendor_info.memo".
+     * Extract bank name in "vendor_info.bank_name" or "vendor_info.bank_details".
+   - Only set "is_invoice": false if the document is strictly an invalid, non-financial document such as a user guide, training document, manual, guideline, tutorial, walkthrough, employee agreement, blood report, medical report, lab report, or clinical report.
+2. If the document is classified as a valid invoice/bill/check ("is_invoice": true), use the structured Azure fields and RAW INVOICE CONTEXT as evidence for extracting the fields.
 3. Use the raw text to FILL missing fields or to NORMALIZE formats.
 4. If a field is not found, use null.
 5. Standardize date formats to YYYY-MM-DD.
 6. Convert all amounts to plain numbers (no currency symbols; remove commas).
-7. Be very careful with invoice numbers, dates, and amounts.
+7. Be very careful with invoice/check numbers, dates, and amounts.
 8. DO NOT invent or output any line_items array.
-9. Identify if the document is a commercial invoice or utility/commercial bill.
-   - If the document is titled "TAX INVOICE", "INVOICE", or contains invoice details, set "is_invoice": true.
-   - If it is strictly a standalone bank cheque image, standalone check, payslip, salary slip, compensation letter, payroll document, agreement, blood report, medical report, lab report, clinical report, guideline, or user guide, set "is_invoice": false. Otherwise, set it to true.
+9. Document identification summary:
+   - If the document is titled "TAX INVOICE", "INVOICE", contains invoice details, or is a check/cheque (bank cheque, check request, cashier's check, check voucher), set "is_invoice": true.
+   - If it is strictly a user guide, training manual, guideline, tutorial, employment agreement, medical report, or blood report, set "is_invoice": false. Otherwise, set it to true.
 10. Return ONLY valid JSON, no markdown, no comments.
 
 STRUCTURED AZURE FIELDS (headers/amounts, no Items):
@@ -650,7 +674,7 @@ Return ONLY the JSON object. No explanations, no markdown formatting, just pure 
     async def _call_llm_for_enhancement(self, prompt: str) -> tuple[Dict[str, Any], str]:
         try:
             messages = [
-                SystemMessage(content="You are an expert invoice data extraction specialist. Extract header fields only - DO NOT extract line items. Return ONLY valid JSON."),
+                SystemMessage(content="You are an expert invoice and financial document data extraction specialist. Invoices, commercial bills, receipts, and checks/cheques are valid documents to process. Extract header fields only - DO NOT extract line items. Return ONLY valid JSON."),
                 HumanMessage(content=prompt)
             ]
 

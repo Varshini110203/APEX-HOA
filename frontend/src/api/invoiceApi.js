@@ -180,3 +180,10 @@ export const getInvoiceAttachmentLink = (invoiceId, blobName) =>
     API.get(`/invoices/${invoiceId}/attachments/link`, {
         params: { blob_name: blobName }
     }).then(res => res.data);
+
+export const getInvoiceAttachmentFile = (invoiceId, blobName) =>
+    API.get(`/invoices/${invoiceId}/attachments/file`, {
+        params: { blob_name: blobName },
+        responseType: 'blob'
+    }).then(res => res.data);
+

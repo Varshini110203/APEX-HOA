@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Modal, Table, Space, message } from "antd";
-import { Trash2, Download, Paperclip, FileText, Image, FileSpreadsheet } from "lucide-react";
+import { Modal, Table, Space, message, Spin } from "antd";
+import { Trash2, Download, Paperclip, FileText, Image, FileSpreadsheet, Eye, ExternalLink, X, AlertCircle } from "lucide-react";
 import { useInvoiceStore } from "../../../store/invoice.store";
 import { useAuthStore } from "../../../store/authStore";
 import {
     uploadInvoiceAttachments,
     deleteInvoiceAttachment,
     getInvoiceAttachmentLink,
+    getInvoiceAttachmentFile,
     getInvoiceById
 } from "../../../api/invoiceApi";
 import CustomButton from "../../../shared/components/CustomButton";
@@ -35,6 +36,12 @@ const AttachmentsTab = () => {
     const [itemToDelete, setItemToDelete] = useState(null);
     const [loading, setLoading] = useState(false);
 
+    // Attachment Preview Modal State
+    const [previewAttachment, setPreviewAttachment] = useState(null);
+    const [previewUrl, setPreviewUrl] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState(null);
+
     const canModify = ["scanner", "coder", "admin", "hoa user", "hoa approver", "ap user", "ap approver", "ar user"].includes(activeRole?.toLowerCase()) || activeRole?.toLowerCase()?.includes('user') || activeRole?.toLowerCase() === 'admin';
 
     const attachments = activeInvoiceData?.attachments || [];
@@ -56,15 +63,105 @@ const AttachmentsTab = () => {
         loadFreshData();
     }, [viewInvoiceId, setActiveInvoiceData]);
 
-    const handleDownload = async (attachment) => {
+    const handleView = async (attachment) => {
+        if (!attachment) return;
+
+        // Clean up any existing blob URL
+        if (previewUrl && previewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(previewUrl);
+        }
+
+        setPreviewAttachment(attachment);
+        setPreviewError(null);
+        setPreviewUrl(null);
+
+        const filename = attachment.filename || "";
+        const lower = filename.toLowerCase();
+        const isSpreadsheet = lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv");
+
+        if (isSpreadsheet) {
+            setPreviewLoading(false);
+            return;
+        }
+
+        setPreviewLoading(true);
         try {
+            let loadedUrl = null;
+
+            // 1. First priority: Fetch blob directly from backend to avoid any cross-origin/iframe limitations
+            try {
+                const blob = await getInvoiceAttachmentFile(viewInvoiceId, attachment.blob_name);
+                if (blob && blob.size > 0) {
+                    loadedUrl = URL.createObjectURL(blob);
+                }
+            } catch (blobErr) {
+                console.warn("Direct attachment file fetch failed, falling back to SAS link:", blobErr);
+            }
+
+            // 2. Second priority: Fallback to Azure SAS URL
+            if (!loadedUrl) {
+                const linkRes = await getInvoiceAttachmentLink(viewInvoiceId, attachment.blob_name);
+                if (linkRes?.sas_url) {
+                    loadedUrl = linkRes.sas_url;
+                }
+            }
+
+            if (loadedUrl) {
+                setPreviewUrl(loadedUrl);
+            } else {
+                setPreviewError("Unable to load preview for this attachment.");
+            }
+        } catch (err) {
+            console.error("Error previewing attachment:", err);
+            setPreviewError("Failed to load attachment preview.");
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const handleClosePreview = () => {
+        if (previewUrl && previewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(previewUrl);
+        }
+        setPreviewAttachment(null);
+        setPreviewUrl(null);
+        setPreviewError(null);
+        setPreviewLoading(false);
+    };
+
+    const handleDownload = async (attachment) => {
+        const hideLoading = message.loading("Preparing attachment download...", 0);
+        try {
+            // Priority 1: Direct blob download
+            try {
+                const blob = await getInvoiceAttachmentFile(viewInvoiceId, attachment.blob_name);
+                if (blob && blob.size > 0) {
+                    hideLoading();
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = attachment.filename || "attachment";
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    message.success("Download started.");
+                    return;
+                }
+            } catch (err) {
+                console.warn("Direct blob download failed, falling back to link:", err);
+            }
+
+            // Priority 2: SAS URL fallback
             const res = await getInvoiceAttachmentLink(viewInvoiceId, attachment.blob_name);
+            hideLoading();
             if (res.sas_url) {
                 window.open(res.sas_url, "_blank");
             } else {
                 message.error("Failed to generate download link.");
             }
         } catch (err) {
+            hideLoading();
             console.error("Error downloading attachment:", err);
             message.error("Failed to download attachment.");
         }
@@ -106,21 +203,30 @@ const AttachmentsTab = () => {
             title: "File Name",
             dataIndex: "filename",
             key: "filename",
-            render: (text) => {
-                const lower = text.toLowerCase();
+            render: (text, record) => {
+                const lower = (text || "").toLowerCase();
                 const isPdf = lower.endsWith(".pdf");
                 const isExcel = lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv");
                 return (
-                     <div className="flex items-center gap-2">
+                    <div
+                        className="flex items-center gap-2 group cursor-pointer"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleView(record);
+                        }}
+                        title={`Click to view ${text}`}
+                    >
                         {isPdf ? (
-                            <FileText size={16} className="text-[#22B4E6]" />
+                            <FileText size={16} className="text-[#22B4E6] flex-shrink-0" />
                         ) : isExcel ? (
-                            <FileSpreadsheet size={16} className="text-[#22B4E6]" />
+                            <FileSpreadsheet size={16} className="text-emerald-500 flex-shrink-0" />
                         ) : (
-                            <Image size={16} className="text-[#22B4E6]" />
+                            <Image size={16} className="text-[#22B4E6] flex-shrink-0" />
                         )}
-                        <span className="font-medium text-gray-800">{text}</span>
-                     </div>
+                        <span className="font-medium text-gray-800 group-hover:text-[#22B4E6] group-hover:underline transition-colors truncate">
+                            {text}
+                        </span>
+                    </div>
                 );
             }
         },
@@ -146,18 +252,34 @@ const AttachmentsTab = () => {
             title: "Actions",
             key: "actions",
             render: (_, record) => (
-                <Space size="middle">
+                <Space size="small">
                     <button
-                        onClick={() => handleDownload(record)}
-                        className="text-[#22B4E6] hover:text-[#198cb4] flex items-center gap-1 cursor-pointer bg-transparent border-0"
-                        title="Download/Open"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleView(record);
+                        }}
+                        className="text-[#22B4E6] hover:text-[#198cb4] flex items-center justify-center p-1.5 rounded-md hover:bg-sky-50 transition-colors cursor-pointer bg-transparent border-0"
+                        title="View Attachment"
+                    >
+                        <Eye size={16} />
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownload(record);
+                        }}
+                        className="text-gray-500 hover:text-gray-700 flex items-center justify-center p-1.5 rounded-md hover:bg-gray-100 transition-colors cursor-pointer bg-transparent border-0"
+                        title="Download Attachment"
                     >
                         <Download size={16} />
                     </button>
                     {canModify && (
                         <button
-                            onClick={() => handleDelete(record)}
-                            className="text-[#F87171] hover:text-red-600 flex items-center gap-1 cursor-pointer bg-transparent border-0"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(record);
+                            }}
+                            className="text-[#F87171] hover:text-red-600 flex items-center justify-center p-1.5 rounded-md hover:bg-red-50 transition-colors cursor-pointer bg-transparent border-0"
                             title="Delete"
                         >
                             <Trash2 size={16} />
@@ -192,6 +314,13 @@ const AttachmentsTab = () => {
                     columns={columns}
                     dataSource={attachments.map((att, idx) => ({ ...att, key: idx }))}
                     pagination={false}
+                    onRow={(record) => ({
+                        onClick: (e) => {
+                            if (e.target.closest("button") || e.target.closest("a")) return;
+                            handleView(record);
+                        },
+                        className: "cursor-pointer hover:bg-sky-50/40 transition-colors"
+                    })}
                     locale={{
                         emptyText: (
                             <div className="py-12 text-center text-gray-400 flex flex-col items-center gap-2">
@@ -199,7 +328,7 @@ const AttachmentsTab = () => {
                                 <span>No attachments found</span>
                                 {canModify && (
                                     <span className="text-xs text-gray-400">
-                                        Click "Add Attachment" to upload pdf, jpg, jpeg, png files
+                                        Click "Add Attachment" to upload pdf, jpg, jpeg, png, xls, xlsx, csv files
                                     </span>
                                 )}
                             </div>
@@ -207,6 +336,182 @@ const AttachmentsTab = () => {
                     }}
                 />
             </div>
+
+            {/* Attachment Preview Modal */}
+            <Modal
+                open={!!previewAttachment}
+                onCancel={handleClosePreview}
+                footer={null}
+                title={null}
+                width={960}
+                centered
+                destroyOnClose
+                closeIcon={null}
+                styles={{
+                    content: {
+                        padding: 0,
+                        borderRadius: "16px",
+                        overflow: "hidden",
+                        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)"
+                    },
+                    body: {
+                        padding: 0
+                    }
+                }}
+            >
+                {previewAttachment && (
+                    <div className="flex flex-col h-[82vh] max-h-[850px] bg-white">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-gray-50/80">
+                            <div className="flex items-center gap-3 min-w-0 pr-4">
+                                <div className="p-2 rounded-lg bg-sky-50 text-[#11699E] flex-shrink-0">
+                                    {(() => {
+                                        const lower = (previewAttachment.filename || "").toLowerCase();
+                                        if (lower.endsWith(".pdf")) return <FileText size={20} className="text-[#22B4E6]" />;
+                                        if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return <FileSpreadsheet size={20} className="text-emerald-500" />;
+                                        return <Image size={20} className="text-[#11699E]" />;
+                                    })()}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="font-semibold text-gray-800 text-[15px] truncate custom-font-jura" title={previewAttachment.filename}>
+                                        {previewAttachment.filename}
+                                    </div>
+                                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                                        <span>{formatSize(previewAttachment.size)}</span>
+                                        {previewAttachment.uploaded_at && (
+                                            <>
+                                                <span>•</span>
+                                                <span>Uploaded {formatDate(previewAttachment.uploaded_at)}</span>
+                                            </>
+                                        )}
+                                        {previewAttachment.uploaded_by && (
+                                            <>
+                                                <span>•</span>
+                                                <span>by {previewAttachment.uploaded_by}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                {previewUrl && (
+                                    <button
+                                        onClick={() => window.open(previewUrl, "_blank")}
+                                        className="h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-white hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors cursor-pointer"
+                                        title="Open in new window"
+                                    >
+                                        <ExternalLink size={14} />
+                                        <span className="hidden sm:inline">Open in Tab</span>
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => handleDownload(previewAttachment)}
+                                    className="h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium text-[#11699E] bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors cursor-pointer"
+                                    title="Download attachment"
+                                >
+                                    <Download size={14} />
+                                    <span className="hidden sm:inline">Download</span>
+                                </button>
+                                <button
+                                    onClick={handleClosePreview}
+                                    className="h-8 w-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer border-0 bg-transparent ml-1"
+                                    title="Close"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Viewer Body */}
+                        <div className="flex-1 min-h-0 bg-gray-100/60 flex items-center justify-center overflow-auto p-4">
+                            {previewLoading ? (
+                                <div className="flex flex-col items-center gap-3 py-12">
+                                    <Spin size="large" />
+                                    <span className="text-sm text-gray-500 font-medium">Loading attachment preview...</span>
+                                </div>
+                            ) : previewError ? (
+                                <div className="flex flex-col items-center gap-3 p-8 bg-white rounded-xl border border-red-100 shadow-sm max-w-md text-center">
+                                    <AlertCircle size={40} className="text-red-500" />
+                                    <div className="text-base font-semibold text-gray-800">Preview Unavailable</div>
+                                    <p className="text-xs text-gray-500">{previewError}</p>
+                                    <button
+                                        onClick={() => handleDownload(previewAttachment)}
+                                        className="mt-2 px-4 py-2 bg-[#22B4E6] text-white rounded-lg text-xs font-semibold hover:opacity-90 flex items-center gap-2 cursor-pointer border-0"
+                                    >
+                                        <Download size={14} />
+                                        Download File Instead
+                                    </button>
+                                </div>
+                            ) : (() => {
+                                const lower = (previewAttachment.filename || "").toLowerCase();
+                                const isPdf = lower.endsWith(".pdf");
+                                const isSpreadsheet = lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv");
+                                const isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") || lower.endsWith(".gif") || lower.endsWith(".webp") || lower.endsWith(".svg");
+
+                                if (isSpreadsheet) {
+                                    return (
+                                        <div className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl border border-gray-200 shadow-sm max-w-md text-center">
+                                            <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4">
+                                                <FileSpreadsheet size={32} />
+                                            </div>
+                                            <h4 className="text-base font-bold text-gray-800 mb-1">{previewAttachment.filename}</h4>
+                                            <p className="text-xs text-gray-500 mb-6">
+                                                Spreadsheets cannot be rendered directly in the browser preview.
+                                            </p>
+                                            <button
+                                                onClick={() => handleDownload(previewAttachment)}
+                                                className="px-5 py-2.5 bg-[#22B4E6] hover:bg-[#198cb4] text-white text-xs font-semibold rounded-lg flex items-center gap-2 cursor-pointer border-0 shadow-sm transition-all"
+                                            >
+                                                <Download size={14} />
+                                                Download Spreadsheet
+                                            </button>
+                                        </div>
+                                    );
+                                }
+
+                                if (isPdf && previewUrl) {
+                                    return (
+                                        <iframe
+                                            src={previewUrl}
+                                            title={previewAttachment.filename}
+                                            className="w-full h-full rounded-lg border border-gray-200 bg-white shadow-inner"
+                                        />
+                                    );
+                                }
+
+                                if (isImage && previewUrl) {
+                                    return (
+                                        <div className="w-full h-full flex items-center justify-center bg-gray-900/5 rounded-lg p-2 overflow-auto">
+                                            <img
+                                                src={previewUrl}
+                                                alt={previewAttachment.filename}
+                                                className="max-w-full max-h-full object-contain rounded shadow-sm select-none"
+                                            />
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="flex flex-col items-center gap-3 p-8 bg-white rounded-xl border border-gray-200 shadow-sm max-w-md text-center">
+                                        <FileText size={40} className="text-gray-400" />
+                                        <div className="text-base font-semibold text-gray-800">Preview Not Supported</div>
+                                        <p className="text-xs text-gray-500">This file format cannot be viewed inline.</p>
+                                        <button
+                                            onClick={() => handleDownload(previewAttachment)}
+                                            className="mt-2 px-4 py-2 bg-[#22B4E6] text-white rounded-lg text-xs font-semibold hover:opacity-90 flex items-center gap-2 cursor-pointer border-0"
+                                        >
+                                            <Download size={14} />
+                                            Download File
+                                        </button>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
 
             <Modal
                 open={!!itemToDelete}

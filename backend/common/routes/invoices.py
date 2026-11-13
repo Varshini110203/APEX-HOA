@@ -4712,3 +4712,87 @@ async def get_attachment_link(
         raise HTTPException(status_code=500, detail=f"Failed to generate SAS token: {str(e)}")
 
 
+@router.get("/{invoice_id}/attachments/file")
+async def get_attachment_file(
+    invoice_id: int,
+    blob_name: str = Query(...),
+    current_user: UserResponse = Depends(get_current_user),
+    entity: str = Depends(get_current_entity),
+    db: Session = Depends(get_db)
+):
+    invoice = invoice_repo.get(db, invoice_id)
+    if not invoice or invoice.entity != entity:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # Verify that the blob_name belongs to this invoice's attachments
+    import json as _json
+    current_attachments = []
+    if invoice.attachments:
+        try:
+            current_attachments = _json.loads(invoice.attachments) if isinstance(invoice.attachments, str) else (invoice.attachments or [])
+        except:
+            pass
+            
+    matching_att = next((att for att in current_attachments if att.get("blob_name") == blob_name), None)
+    if not matching_att:
+        raise HTTPException(status_code=403, detail="Invalid attachment blob name for this invoice")
+
+    filename = matching_att.get("filename") or os.path.basename(blob_name)
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+    
+    media_type_map = {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".xls": "application/vnd.ms-excel",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".csv": "text/csv",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
+
+    # 1. Try local file path if present
+    file_path = matching_att.get("file_path")
+    if file_path:
+        check_path = file_path if os.path.isabs(file_path) else os.path.join(os.getcwd(), file_path)
+        if os.path.exists(check_path):
+            return FileResponse(
+                path=check_path,
+                media_type=media_type,
+                filename=filename
+            )
+
+    # 2. Try streaming from Azure Blob Storage
+    try:
+        from common.services.azure_blob import container_client
+        blob_client = container_client.get_blob_client(blob_name)
+        if blob_client.exists():
+            from fastapi import Response
+            blob_data = blob_client.download_blob().readall()
+            return Response(
+                content=blob_data,
+                media_type=media_type,
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{filename}\""
+                }
+            )
+    except Exception as e:
+        logger.error(f"Failed to stream attachment blob {blob_name} from Azure: {e}")
+
+    # 3. Fallback: search in folder paths
+    found_path = find_file_in_any_folder(filename)
+    if found_path and os.path.exists(found_path):
+        return FileResponse(
+            path=found_path,
+            media_type=media_type,
+            filename=filename
+        )
+
+    raise HTTPException(status_code=404, detail="Attachment file not found")
+
+
+
