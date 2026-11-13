@@ -367,7 +367,7 @@ const Invoice = () => {
 
             if (failed.length > 0) {
                 if (files.length === 1) {
-                    toast.error("The Uploaded PDF is not an Invoice");
+                    toast.error("The Uploaded PDF is not a valid invoice or check");
                 } else {
                     let alertMsg = "";
                     const pdfFailures = failed.filter(f => f.reason === "is not a pdf");
