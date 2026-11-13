@@ -132,11 +132,13 @@ const SelectEntityPage = () => {
     let targetRoute = "/dashboard";
     const roleForRouting = activeRole.toLowerCase();
 
-    if (roleForRouting === 'scanner') {
+    if (roleForRouting.includes('ap user') || roleForRouting === 'coder' || (roleForRouting.includes('ap') && !roleForRouting.includes('approver'))) {
+      targetRoute = "/coding";
+    } else if (roleForRouting === 'scanner') {
       targetRoute = "/invoices";
     } else if (roleForRouting.includes('approver')) {
       targetRoute = "/approvals";
-    } else if (roleForRouting.includes('user') || roleForRouting === 'coder') {
+    } else if (roleForRouting.includes('user')) {
       targetRoute = "/invoices";
     }
 

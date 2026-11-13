@@ -17,6 +17,8 @@ const getStatusLabel = (value, level, row = null) => {
         rejected: "Rejected",
         processed: "Processed",
         waiting_approval: "Waiting Approval",
+        waiting_hoa_approval: "Waiting HOA Approval",
+        waiting_ap_approval: "Waiting AP Approval",
         waiting_coding: "Waiting For Coding",
         sage_posted: `Posted to ${erp}`,
         sage_post_failed: `${erp} Post Failed`,
@@ -41,6 +43,8 @@ const StatusBadge = ({ value, level, label }) => {
         rejected: "bg-red-100 text-red-700",
         processed: "bg-blue-100 text-blue-700",
         waiting_approval: "bg-orange-100 text-orange-700",
+        waiting_hoa_approval: "bg-amber-100 text-amber-700",
+        waiting_ap_approval: "bg-orange-100 text-orange-700",
         waiting_coding: "bg-purple-100 text-purple-700",
         sage_posted: "bg-emerald-100 text-emerald-700",
         sage_post_failed: "bg-red-100 text-red-700",
@@ -64,7 +68,10 @@ const getNextApprover = (row) => {
     const status = (row?.status || "").toLowerCase();
     if (status === 'sage_posted' || status === 'approved') return "Completed";
     if (status === 'rejected') return "Rejected";
-    if (status === 'waiting_coding' || status === 'processed') return "Finance Team";
+    if (status === 'waiting_hoa_approval') return "HOA Approver";
+    if (status === 'waiting_coding') return "AP Coder";
+    if (status === 'waiting_ap_approval') return "AP Approver";
+    if (status === 'processed') return "HOA User";
 
     const currentLevel = row?.current_approver_level || 1;
     const stage = row?.assigned_approvers?.[currentLevel - 1];

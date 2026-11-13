@@ -28,6 +28,8 @@ def get_status_label(invoice: Invoice, db: Session = None) -> str:
             "rejected": "Rejected",
             "processed": "Processed",
             "waiting_coding": "Waiting For Coding",
+            "waiting_hoa_approval": "Waiting HOA Approval",
+            "waiting_ap_approval": "Waiting AP Approval",
             "sage_posted": f"Posted to {erp_name}",
             "sage_post_failed": f"{erp_name} Post Failed",
             "reworked": "Reworked",

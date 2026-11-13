@@ -45,6 +45,8 @@ export const usePdfHighlights = ({
             }
         } else {
             const map = {
+                'requestNo': ocrData.invoice_details?.request_id || ocrData.invoice_details?.requestId,
+                'requestId': ocrData.invoice_details?.request_id || ocrData.invoice_details?.requestId,
                 'vendorId': ocrData.vendor_info?.vendor_id || ocrData.vendor_info?.vendorId,
                 'vendorCode': ocrData.vendor_info?.vendor_id || ocrData.vendor_info?.vendorId,
                 'vendorName': ocrData.vendor_info?.name,

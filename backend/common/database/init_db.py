@@ -69,6 +69,39 @@ def _add_column_if_not_exists(conn, table_name: str, column_name: str, column_de
         print(f"SUCCESS: Added column '{column_name}' ({column_def}) to table '{table_name}'")
 
 
+def _widen_status_column_if_needed(conn):
+    """Ensure invoices.status is at least VARCHAR(50) so new longer status values don't get truncated."""
+    try:
+        res = conn.execute(text(
+            "SELECT CHARACTER_MAXIMUM_LENGTH "
+            "FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE LOWER(TABLE_NAME) = 'invoices' AND LOWER(COLUMN_NAME) = 'status'"
+        )).fetchone()
+        if res and res[0] is not None and res[0] < 50:
+            print(f"Altering invoices.status from length {res[0]} to VARCHAR(50)...")
+            indexes = conn.execute(text("""
+                SELECT i.name
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                WHERE i.object_id = OBJECT_ID('invoices') AND c.name = 'status' AND i.is_primary_key = 0
+            """)).fetchall()
+            idx_names = [r[0] for r in indexes]
+            for idx_name in idx_names:
+                conn.execute(text(f"DROP INDEX {idx_name} ON invoices"))
+
+            conn.execute(text("ALTER TABLE invoices ALTER COLUMN status VARCHAR(50) NOT NULL"))
+
+            for idx_name in idx_names:
+                if idx_name == "ix_invoice_entity_status":
+                    conn.execute(text("CREATE NONCLUSTERED INDEX ix_invoice_entity_status ON invoices(entity, status)"))
+                else:
+                    conn.execute(text(f"CREATE NONCLUSTERED INDEX {idx_name} ON invoices(status)"))
+            print("SUCCESS: Widened invoices.status column to VARCHAR(50)")
+    except Exception as e:
+        print(f"Warning widening invoices.status: {e}")
+
+
 def create_tables(engine_obj, base_obj):
     """Create all database tables and schema migrations"""
     print("Creating database tables...")
@@ -115,6 +148,7 @@ def create_tables(engine_obj, base_obj):
             _add_column_if_not_exists(conn, "invoices", "payment_reference", "NVARCHAR(255) NULL")
             _add_column_if_not_exists(conn, "invoices", "expense_category", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "loan_number", "NVARCHAR(100) NULL")
+            _widen_status_column_if_needed(conn)
 
             # Explicitly commit the changes
             conn.commit()
@@ -175,6 +209,7 @@ def create_default_settings(db):
         "statuses": ["active", "pending", "rejected"],
         "navigation": [
             {"label": "Dashboard", "path": "/dashboard", "roles": ["all"]},
+            {"label": "Coding", "path": "/coding", "roles": ["AP USER"]},
             {"label": "Invoices", "path": "/invoices", "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]},
             {"label": "Approvals", "path": "/approvals", "roles": ["HOA APPROVER", "AP APPROVER"]},
             {"label": "Master Data", "path": "/master-data", "roles": ["admin"]},

@@ -76,11 +76,17 @@ const ApprovalsPage = () => {
             const isFinanceLevel = stage?.is_finance === true;
             const stageEmails = getStageEmails(stage);
 
-            const approverLabel = isFinanceLevel
+            let approverLabel = isFinanceLevel
                 ? 'Finance Team'
                 : stageEmails.length > 0
                     ? stageEmails.map(email => getUsernameByEmail(email, approverData)).join(", ")
                     : 'Pending';
+
+            if (inv.status === 'waiting_hoa_approval') {
+                approverLabel = 'HOA Approver';
+            } else if (inv.status === 'waiting_ap_approval') {
+                approverLabel = approverLabel !== 'Pending' ? approverLabel : 'AP Approver';
+            }
 
             const isDelegated = !isFinanceLevel && stageEmails.some(e => active.includes(e));
 

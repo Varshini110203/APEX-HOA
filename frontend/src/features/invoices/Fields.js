@@ -5,6 +5,7 @@ export const QUICK_VIEW_CONFIG = [
         section: "Header",
         type: "form",
         fields: [
+            { key: "requestNo", label: "Request No", type: "input", editable: false },
             { key: "vendorId", label: "Vendor Code", type: "input", editable: false, required: true },
             { key: "vendorName", label: "Vendor Name", type: "input", editable: true, required: true },
             { key: "invoiceNumber", label: "Invoice Number", type: "input", editable: true, required: true },

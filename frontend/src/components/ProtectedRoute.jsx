@@ -61,12 +61,19 @@ const ProtectedRoute = () => {
             if ((navItem.path === '/master-data' || navItem.path === '/settings') && (userActiveRole === 'scanner' || userActiveRole === 'coder' || userActiveRole.includes('user'))) {
                 hasAccess = true;
             }
+
+            if (navItem.path === '/coding' && (userActiveRole.includes('ap user') || userActiveRole === 'coder' || (userActiveRole.includes('ap') && !userActiveRole.includes('approver')))) {
+                hasAccess = true;
+            }
             
             if (!hasAccess) {
                 // If user doesn't have access, redirect to appropriate default route
                 if (currentPath !== '/dashboard') {
                     if (userActiveRole.includes('approver') && userDept === 'non-finance') {
                         return <Navigate to="/invoices" replace />;
+                    }
+                    if (userActiveRole.includes('ap user') || userActiveRole === 'coder' || (userActiveRole.includes('ap') && !userActiveRole.includes('approver'))) {
+                        return <Navigate to="/coding" replace />;
                     }
                     return <Navigate to="/dashboard" replace />;
                 }

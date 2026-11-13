@@ -92,7 +92,19 @@ const LoginPage = () => {
                             };
                             useInvoiceStore.getState().setEntityMaster(rawEntity);
 
-                            navigate('/dashboard');
+                            let targetRoute = '/dashboard';
+                            const roleForRouting = activeRole.toLowerCase();
+                            if (roleForRouting.includes('ap user') || roleForRouting === 'coder' || (roleForRouting.includes('ap') && !roleForRouting.includes('approver'))) {
+                                targetRoute = '/coding';
+                            } else if (roleForRouting === 'scanner') {
+                                targetRoute = '/invoices';
+                            } else if (roleForRouting.includes('approver')) {
+                                targetRoute = '/approvals';
+                            } else if (roleForRouting.includes('user')) {
+                                targetRoute = '/invoices';
+                            }
+
+                            navigate(targetRoute);
                         } else {
                             navigate('/select-entity');
                         }

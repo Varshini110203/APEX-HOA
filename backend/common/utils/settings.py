@@ -9,6 +9,7 @@ DEFAULT_SETTINGS = {
     "statuses": ["active", "pending", "rejected"],
     "navigation": [
         {"label": "Dashboard", "path": "/dashboard", "roles": ["all"]},
+        {"label": "Coding", "path": "/coding", "roles": ["AP USER"]},
         {"label": "Invoices", "path": "/invoices", "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]},
         {"label": "Approvals", "path": "/approvals", "roles": ["HOA APPROVER", "AP APPROVER"]},
         {"label": "Master Data", "path": "/master-data", "roles": ["admin"]},
@@ -75,12 +76,16 @@ def get_app_settings(db: Session = None):
                 if not any(r.lower() == role_name.lower() for r in merged_settings["roles"]):
                     merged_settings["roles"].append(role_name)
 
-        # Remove deprecated 'Coding' navigation entry completely
+        # Ensure 'Coding' navigation entry exists for AP USER
         if "navigation" in merged_settings and isinstance(merged_settings["navigation"], list):
-            merged_settings["navigation"] = [
-                nav for nav in merged_settings["navigation"]
-                if isinstance(nav, dict) and nav.get("label") != "Coding" and nav.get("path") != "/coding"
-            ]
+            coding_nav = next((nav for nav in merged_settings["navigation"] if isinstance(nav, dict) and (nav.get("label") == "Coding" or nav.get("path") == "/coding")), None)
+            if not coding_nav:
+                merged_settings["navigation"].insert(1, {"label": "Coding", "path": "/coding", "roles": ["AP USER"]})
+            else:
+                coding_roles = coding_nav.get("roles", [])
+                if "AP USER" not in coding_roles:
+                    coding_roles.append("AP USER")
+                coding_nav["roles"] = coding_roles
 
         # Clean up navigation roles
         if "navigation" in merged_settings and isinstance(merged_settings["navigation"], list):

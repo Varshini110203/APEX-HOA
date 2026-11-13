@@ -70,7 +70,20 @@ export default function SSOCallback() {
                     };
                     useInvoiceStore.getState().setEntityMaster(rawEntity);
 
-                    navigate('/dashboard', { replace: true });
+                    let targetRoute = '/dashboard';
+                    const activeRole = sessionStorage.getItem('active_role') || (userObj.role ? userObj.role.split(',')[0].trim() : '');
+                    const roleForRouting = activeRole.toLowerCase();
+                    if (roleForRouting.includes('ap user') || roleForRouting === 'coder' || (roleForRouting.includes('ap') && !roleForRouting.includes('approver'))) {
+                        targetRoute = '/coding';
+                    } else if (roleForRouting === 'scanner') {
+                        targetRoute = '/invoices';
+                    } else if (roleForRouting.includes('approver')) {
+                        targetRoute = '/approvals';
+                    } else if (roleForRouting.includes('user')) {
+                        targetRoute = '/invoices';
+                    }
+
+                    navigate(targetRoute, { replace: true });
                 } else {
                     navigate("/select-entity", { replace: true });
                 }
