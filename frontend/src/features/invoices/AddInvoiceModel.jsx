@@ -4,12 +4,31 @@ import { Trash2, Hash, CheckCircle2 } from "lucide-react";
 import CustomButton from "../../shared/components/CustomButton";
 
 // ── Request ID generator ─────────────────────────────────────────────────────
-// Keeps a per-session counter so IDs are unique even when generated in the
-// same second.  Format: yyyymmddhhmmss + 4-digit sequence (e.g. 0001, 0002 …)
+// Persists counter in localStorage so that sequence numbers increment
+// continuously without restarting, even across page reloads, browser restarts, and function re-executions.
+// Format: yyyymmddhhmmss + sequence (e.g. 0001, 0002 … 9999, 10000, 10001 …)
+const REQUEST_ID_COUNTER_KEY = "apex_request_id_counter";
 let _sessionSeq = 0;
 
+const getNextSequence = () => {
+    try {
+        const stored = localStorage.getItem(REQUEST_ID_COUNTER_KEY);
+        let seq = stored ? parseInt(stored, 10) : 0;
+        if (isNaN(seq) || seq < 0) {
+            seq = 0;
+        }
+        seq += 1;
+        localStorage.setItem(REQUEST_ID_COUNTER_KEY, String(seq));
+        return seq;
+    } catch {
+        // Fallback to in-memory counter if localStorage is not accessible
+        _sessionSeq += 1;
+        return _sessionSeq;
+    }
+};
+
 const generateRequestId = () => {
-    _sessionSeq += 1;
+    const nextSeq = getNextSequence();
     const now = new Date();
     const pad2 = (n) => String(n).padStart(2, "0");
     const pad4 = (n) => String(n).padStart(4, "0");
@@ -20,7 +39,7 @@ const generateRequestId = () => {
     const hh   = pad2(now.getHours());
     const mm   = pad2(now.getMinutes());
     const ss   = pad2(now.getSeconds());
-    const seq  = pad4(_sessionSeq);
+    const seq  = pad4(nextSeq);
 
     return `${yyyy}${MM}${dd}${hh}${mm}${ss}${seq}`;
 };
