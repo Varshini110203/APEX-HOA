@@ -1,4 +1,5 @@
 import { useInvoiceStore } from "../../store/invoice.store";
+import { useAuthStore } from "../../store/authStore";
 import CustomTabs from "./CustomTabs";
 import { lazy, Suspense, useState, useEffect, useTransition } from "react";
 import React from "react";
@@ -54,16 +55,26 @@ const TabContent = React.memo(({ tabName, isActive }) => {
 const InvoiceRightPanel = () => {
 
     const { invoiceActiveTab, setInvoiceActiveTab, tabList, activeInvoiceData } = useInvoiceStore();
+    const activeRole = useAuthStore((state) => state.activeRole);
+    const user = useAuthStore((state) => state.user);
+    const currentRole = (activeRole || user?.role || '').toLowerCase();
+    const isHoaApprover = currentRole.includes("hoa") && currentRole.includes("approver");
 
-    // Determine status and explicitly filter out Coding tab if processed
+    // Determine status and explicitly filter out Coding tab if processed or if HOA Approver
     const status = (activeInvoiceData?.status || "").toLowerCase();
-    const visibleTabs = status === "processed" ? tabList.filter(t => t !== "Coding") : tabList;
+    const visibleTabs = (status === "processed" || isHoaApprover) ? tabList.filter(t => t !== "Coding") : tabList;
 
     // Safety check just in case state gets out of sync with the visible tabs
     const validActiveTab = visibleTabs.includes(invoiceActiveTab) ? invoiceActiveTab : (visibleTabs[0] || "Quick View");
 
     const [displayTab, setDisplayTab] = useState(validActiveTab);
     const [isPending, startTransition] = useTransition();
+
+    useEffect(() => {
+        if (!visibleTabs.includes(invoiceActiveTab)) {
+            setInvoiceActiveTab(validActiveTab);
+        }
+    }, [visibleTabs, invoiceActiveTab, validActiveTab, setInvoiceActiveTab]);
 
     useEffect(() => {
         if (validActiveTab !== displayTab) {

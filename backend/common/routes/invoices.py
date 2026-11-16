@@ -3491,7 +3491,8 @@ async def update_invoice(
         "exchange_rate", "confidence_score", "total_amount", 
         "amount_due", "invoice_date", "due_date", "posting_date",
         "payment_terms", "payment_method", "any_fee_applicable", "fee_amount",
-        "expense_type", "payment_reference", "expense_category", "loan_number"
+        "expense_type", "payment_reference", "expense_category", "loan_number",
+        "is_editing_enabled", "editing_enabled_by"
     ]
     
     # Process payment_term alias

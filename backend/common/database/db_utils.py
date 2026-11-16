@@ -153,6 +153,8 @@ def invoice_to_dict(invoice: Invoice, include_relationships: bool = True, minima
         "required_approvers": invoice.required_approvers,
         "current_approver_level": invoice.current_approver_level,
         "status_label": get_status_label(invoice),
+        "is_editing_enabled": getattr(invoice, "is_editing_enabled", False),
+        "editing_enabled_by": getattr(invoice, "editing_enabled_by", None),
     }
     
     # Conditionally include JSON fields (avoid heavy parsing in list views)

@@ -63,6 +63,8 @@ class InvoiceBase(BaseModel):
     last_modified_by: Optional[str] = None
     approver: Optional[str] = None
     attachments: Optional[Any] = None
+    is_editing_enabled: Optional[bool] = False
+    editing_enabled_by: Optional[str] = None
 
 class InvoiceCreate(InvoiceBase):
     pass
@@ -94,6 +96,8 @@ class InvoiceUpdate(BaseModel):
     expense_category: Optional[str] = None
     loan_number: Optional[str] = None
     last_updated_at: Optional[datetime] = None
+    is_editing_enabled: Optional[bool] = None
+    editing_enabled_by: Optional[str] = None
 
 class Invoice(InvoiceBase):
     model_config = ConfigDict(from_attributes=True)

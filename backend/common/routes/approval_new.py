@@ -386,6 +386,8 @@ def _record_step(
 
 def _update_invoice_status(db: Session, invoice: Invoice, new_status: str):
     invoice.status = new_status
+    invoice.is_editing_enabled = False
+    invoice.editing_enabled_by = None
     db.add(invoice)
     if new_status == InvoiceStatus.SAGE_POSTED:
         try:
@@ -2596,12 +2598,21 @@ async def enable_editing(
         if hasattr(invoice.status, "value")
         else str(invoice.status)
     )
-    if current_status not in (InvoiceStatus.WAITING_APPROVAL, InvoiceStatus.REWORKED, InvoiceStatus.SAGE_POST_FAILED):
+    if current_status not in (
+        InvoiceStatus.WAITING_APPROVAL,
+        InvoiceStatus.WAITING_HOA_APPROVAL,
+        InvoiceStatus.WAITING_AP_APPROVAL,
+        InvoiceStatus.REWORKED,
+        InvoiceStatus.SAGE_POST_FAILED
+    ):
         raise HTTPException(
             400, f"Editing cannot be enabled for status: {current_status}")
 
     finance_users = _get_finance_users(db, entity)
     email = current_user.email.lower()
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    is_hoa_approver = "hoa approver" in user_roles or any("hoa" in r and "approver" in r for r in user_roles)
+    is_ap_approver = "ap approver" in user_roles or any("ap" in r and "approver" in r for r in user_roles)
 
     delegated_finance = False
     for f_user in finance_users:
@@ -2633,11 +2644,16 @@ async def enable_editing(
         or delegated_finance
         or is_post_approver
         or delegated_post
+        or is_hoa_approver
+        or is_ap_approver
     )
 
     if not is_authorized:
         raise HTTPException(
-            403, "Only Finance Team members or Post Approvers (or their delegates) can enable editing")
+            403, "Only Finance Team members, Post Approvers, or Approvers (or their delegates) can enable editing")
+
+    invoice.is_editing_enabled = True
+    invoice.editing_enabled_by = email
 
     _record_step(
         db, invoice_id,

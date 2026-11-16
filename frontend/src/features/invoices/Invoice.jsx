@@ -170,7 +170,9 @@ const Invoice = () => {
                 setFileName(data.original_filename ?? "");
                 setInvoiceData(data);
                 const status = (data.status || "").toLowerCase();
-                if (status === "processed") setInvoiceActiveTab("Quick View");
+                const role = (useAuthStore.getState().activeRole || useAuthStore.getState().user?.role || currentRole || '').toLowerCase();
+                const isHoaApprover = role.includes("hoa") && role.includes("approver");
+                if (status === "processed" || isHoaApprover) setInvoiceActiveTab("Quick View");
                 else setInvoiceActiveTab("Coding");
             } finally {
                 setIsPreviewLoading(false);

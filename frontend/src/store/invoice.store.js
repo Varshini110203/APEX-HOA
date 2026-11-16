@@ -506,6 +506,7 @@ export const useInvoiceStore = create((set, get) => ({
             lineItems: mappedItems,
             originalLineItems: mappedOriginalItems,
             isVendorSynced: false,
+            isEditingEnabled: Boolean(data?.is_editing_enabled),
         });
     },
 
@@ -516,6 +517,7 @@ export const useInvoiceStore = create((set, get) => ({
         activeInvoiceData: null,
         isPreviewLoading: false,
         isVendorSynced: false,
+        isEditingEnabled: false,
     }),
 
     // =============================
@@ -523,6 +525,9 @@ export const useInvoiceStore = create((set, get) => ({
     // =============================
     highlightedField: null,
     setHighlightedField: (field) => set({ highlightedField: field }),
+
+    isEditingEnabled: false,
+    setIsEditingEnabled: (val) => set({ isEditingEnabled: val }),
 
     activeInvoiceData: null,
     setActiveInvoiceData: (data) => set({ activeInvoiceData: data }),
@@ -565,5 +570,6 @@ export const useInvoiceStore = create((set, get) => ({
         lineItems: [],
         activeInvoiceData: null,
         isVendorSynced: false,
+        isEditingEnabled: false,
     }),
 }));
