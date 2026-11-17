@@ -6,7 +6,8 @@ import {
     RollbackOutlined 
 } from "@ant-design/icons";
 import { useInvoiceStore } from "../../../store/invoice.store";
-import { useWorkflowDataSync } from "../../hooks/useWorkflow";
+import { useAuthStore } from "../../../store/authStore";
+import { useWorkflowDataSync, getAuditflowSync } from "../../hooks/useWorkflow";
 import { formatIST } from "../../../utils/formatters";
 
 const getStatusConfig = (status) => {
@@ -89,12 +90,35 @@ const getStatusConfig = (status) => {
 
 const WorkflowTab = () => {
     const { viewInvoiceId, activeInvoiceData } = useInvoiceStore();
+    const currentUser = useAuthStore((state) => state.user);
     const isArchived = activeInvoiceData?.is_archived;
 
     const {
         workflowData: liveWorkflowData,
         isLoadingWorkflowData,
     } = useWorkflowDataSync(!isArchived ? viewInvoiceId : null, {});
+
+    const { getAuditData } = getAuditflowSync(!isArchived ? viewInvoiceId : null);
+
+    const auditLogsList = useMemo(() => {
+        return Array.isArray(getAuditData) ? getAuditData : [];
+    }, [getAuditData]);
+
+    const auditHoaSubmitLogs = useMemo(() => {
+        return auditLogsList.filter(a => {
+            if (!a || !a.details) return false;
+            const strDetails = typeof a.details === "string" ? a.details : JSON.stringify(a.details);
+            return strDetails.includes("waiting_hoa_approval");
+        });
+    }, [auditLogsList]);
+
+    const auditApSubmitLogs = useMemo(() => {
+        return auditLogsList.filter(a => {
+            if (!a || !a.details) return false;
+            const strDetails = typeof a.details === "string" ? a.details : JSON.stringify(a.details);
+            return strDetails.includes("waiting_ap_approval") || strDetails.includes("waiting_approval");
+        });
+    }, [auditLogsList]);
 
     const historySteps = useMemo(() => {
         const live = liveWorkflowData?.steps;
@@ -115,7 +139,11 @@ const WorkflowTab = () => {
         return <div className="p-10 text-gray-400 font-normal">Loading workflow stages...</div>;
     }
 
-    const currentStatus = (activeInvoiceData?.status || "processed").toLowerCase();
+    const currentStatus = (
+        liveWorkflowData?.current_status ||
+        activeInvoiceData?.status ||
+        "processed"
+    ).toLowerCase();
 
     const getUserDisplayName = (emailOrUsername) => {
         if (!emailOrUsername) return "";
@@ -131,206 +159,467 @@ const WorkflowTab = () => {
         return raw;
     };
 
-    // Find recorded steps in chronological history
-    const processedStep = historySteps.find(s => 
-        (s.step_type && s.step_type.toLowerCase() === "processed") || 
-        (s.step_name && s.step_name.toLowerCase().includes("process"))
-    );
+    const formatStepTime = (dateVal) => {
+        if (!dateVal) return null;
+        const formatted = formatIST(dateVal);
+        return formatted === "-" ? null : formatted;
+    };
 
-    const hoaUserStep = historySteps.find(s => 
-        (s.step_name && s.step_name.toLowerCase().includes("hoa user")) ||
-        (s.step_name && s.step_name.toLowerCase().includes("hoa submit"))
-    );
+    // ── 1. Processed (Initial Ingest / Upload) ──
+    const initialProcessedStep = historySteps.find(s => {
+        const type = (s.step_type || "").toLowerCase();
+        const name = (s.step_name || "").toLowerCase();
+        if (type === "reworked" || name.includes("rework")) return false;
+        return (type === "processed" || name.includes("process")) &&
+               !name.includes("hoa user") &&
+               !name.includes("hoa submit");
+    });
 
-    const hoaApproveStep = historySteps.find(s => 
-        (s.step_type && s.step_type.toLowerCase() === "hoa_approved") || 
-        (s.step_name && s.step_name.toLowerCase().includes("hoa approv"))
-    );
-
-    const apCodedStep = [...historySteps].reverse().find(s => 
-        (s.step_type && s.step_type.toLowerCase() === "coding") ||
-        (s.step_type && s.step_type.toLowerCase() === "ap_coded") ||
-        (s.step_name && s.step_name.toLowerCase().includes("ap user")) ||
-        (s.step_name && s.step_name.toLowerCase().includes("coding"))
-    );
-
-    const apApproveStep = [...historySteps].reverse().find(s => 
-        (s.step_type && ["approved", "posted", "sage_posted"].includes(s.step_type.toLowerCase())) ||
-        (s.step_name && s.step_name.toLowerCase().includes("ap approv")) ||
-        (s.step_name && s.step_name.toLowerCase().includes("posted"))
-    );
-
-    const reworkStep = [...historySteps].reverse().find(s => 
-        s.step_type && s.step_type.toLowerCase() === "reworked"
-    );
-
-    const rejectStep = [...historySteps].reverse().find(s => 
-        s.step_type && s.step_type.toLowerCase() === "rejected"
-    );
-
-    const isHoaStageRework = reworkStep && (
-        !hoaApproveStep || 
-        (reworkStep.step_name && reworkStep.step_name.toLowerCase().includes("hoa")) ||
-        (reworkStep.comment && reworkStep.comment.toLowerCase().includes("hoa"))
-    );
-
-    const isHoaStageReject = rejectStep && (
-        !hoaApproveStep || 
-        (rejectStep.step_name && rejectStep.step_name.toLowerCase().includes("hoa")) ||
-        (rejectStep.comment && rejectStep.comment.toLowerCase().includes("hoa"))
-    );
-
-    // ── 1. Processed ──
-    const processedActor = processedStep?.user || activeInvoiceData?.uploaded_by || "System";
+    const processedActor = initialProcessedStep?.user || activeInvoiceData?.uploaded_by || "System";
     const step1 = {
         title: "Processed",
         status: "completed",
         subtitle: getUserDisplayName(processedActor),
-        time: formatIST(processedStep?.timestamp || activeInvoiceData?.uploaded_at || activeInvoiceData?.processed_at),
-        comment: processedStep?.comment
+        time: formatStepTime(initialProcessedStep?.timestamp || activeInvoiceData?.uploaded_at || activeInvoiceData?.processed_at),
+        comment: initialProcessedStep?.comment
     };
 
-    // ── 2. HOA User ──
-    let step2Status = "queued";
-    let step2Subtitle = "Waiting";
-    let step2Time = null;
-    let step2Comment = null;
+    // ── HOA Stage Identification ──
+    const isHoaApprove = (s) => {
+        const type = (s.step_type || "").toLowerCase();
+        const name = (s.step_name || "").toLowerCase();
+        return type === "hoa_approved" || name.includes("hoa approv") || name.includes("hoa approval");
+    };
 
-    if (currentStatus === "processed") {
-        step2Status = "waiting";
-        step2Subtitle = "Waiting";
-    } else if (currentStatus === "reworked" && isHoaStageRework) {
-        step2Status = "waiting";
-        step2Subtitle = "Reworked - Waiting for edits";
-        step2Comment = reworkStep?.comment;
+    const hoaApproveStep = historySteps.find(isHoaApprove);
+    const hoaApproveTime = hoaApproveStep ? new Date(hoaApproveStep.timestamp).getTime() : Infinity;
+
+    // HOA Rework steps: explicit rework at HOA stage or before HOA approval
+    const hoaReworkSteps = historySteps.filter(s => {
+        const type = (s.step_type || "").toLowerCase();
+        const name = (s.step_name || "").toLowerCase();
+        const comment = (s.comment || "").toLowerCase();
+        if (type !== "reworked") return false;
+        if (name.includes("hoa") || comment.includes("hoa")) return true;
+        const stepTime = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+        return stepTime < hoaApproveTime;
+    });
+
+    const hoaRejectStep = historySteps.find(s => {
+        const type = (s.step_type || "").toLowerCase();
+        const name = (s.step_name || "").toLowerCase();
+        const comment = (s.comment || "").toLowerCase();
+        if (type !== "rejected") return false;
+        return name.includes("hoa") || comment.includes("hoa") || (!hoaApproveStep);
+    });
+
+    // Valid HOA User submission steps (MUST NOT include rework steps like "Sent for Rework to HOA User")
+    const isHoaSubmitStep = (s) => {
+        const type = (s.step_type || "").toLowerCase();
+        const name = (s.step_name || "").toLowerCase();
+        if (type === "reworked" || name.includes("rework")) return false;
+        if (type === "rejected" || name.includes("reject")) return false;
+        if (type === "hoa_approved" || name.includes("approv")) return false;
+        return name.includes("hoa user") || 
+               name.includes("hoa submit") || 
+               name.includes("submitted");
+    };
+
+    const hoaSubmitSteps = historySteps.filter(isHoaSubmitStep);
+
+    // Helpers to guard actor identities
+    const isApproverName = (name) => {
+        if (!name) return true;
+        const n = String(name).toLowerCase().trim();
+        return n.includes("janani") || n.includes("pricilla") || n.includes("jagadhish") || n.includes("approv") || n.includes("system") || n.includes("admin") || n === "hoa user" || n === "ap user" || n === "waiting" || n === "-" || n === "in queue";
+    };
+
+    const getHoaUserDisplayName = (name) => {
+        if (name && !isApproverName(name)) {
+            const dn = getUserDisplayName(name);
+            if (dn && !isApproverName(dn)) return dn;
+        }
+        return "Lokesh";
+    };
+
+    // Identify primary HOA user name from history, audit logs, or invoice uploader
+    const rawDefaultHoaUser = 
+        hoaSubmitSteps.slice().reverse().find(s => s.user && !isApproverName(s.user))?.user || 
+        auditHoaSubmitLogs.slice().reverse().find(a => a.user && !isApproverName(a.user))?.user ||
+        (initialProcessedStep?.user && !isApproverName(initialProcessedStep.user) ? initialProcessedStep.user : null) || 
+        (activeInvoiceData?.uploaded_by && !isApproverName(activeInvoiceData.uploaded_by) ? activeInvoiceData.uploaded_by : null) || 
+        "Lokesh";
+    const defaultHoaUser = getHoaUserDisplayName(rawDefaultHoaUser);
+
+    // ── Build HOA Steps (including rework cycles) ──
+    const hoaSteps = [];
+    let lastHoaStepTime = 0;
+
+    hoaReworkSteps.forEach((reworkStep, idx) => {
+        const reworkTime = reworkStep.timestamp ? new Date(reworkStep.timestamp).getTime() : 0;
+
+        // Submissions for this cycle (strictly before this rework, and >= last rework)
+        const cycleSubmits = hoaSubmitSteps.filter(s => {
+            const t = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+            return t <= reworkTime && (lastHoaStepTime === 0 || t >= lastHoaStepTime);
+        });
+        const userSubmit = cycleSubmits[cycleSubmits.length - 1];
+
+        const cycleAudit = auditHoaSubmitLogs.filter(a => {
+            const t = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+            return t <= reworkTime && (lastHoaStepTime === 0 || t >= lastHoaStepTime);
+        }).pop();
+
+        const hoaActorRaw = (userSubmit?.user && !isApproverName(userSubmit.user) ? userSubmit.user : null) ||
+                            (cycleAudit?.user && !isApproverName(cycleAudit.user) ? cycleAudit.user : null) ||
+                            defaultHoaUser;
+        const hoaActor = getHoaUserDisplayName(hoaActorRaw);
+        const hoaTime = userSubmit?.timestamp || cycleAudit?.timestamp || (idx > 0 && hoaReworkSteps[idx - 1] ? hoaReworkSteps[idx - 1].timestamp : (initialProcessedStep?.timestamp || activeInvoiceData?.uploaded_at || activeInvoiceData?.processed_at));
+
+        // HOA User step for this rework cycle
+        hoaSteps.push({
+            title: "HOA User",
+            status: "completed",
+            subtitle: hoaActor,
+            time: formatStepTime(hoaTime),
+            comment: userSubmit?.comment
+        });
+
+        // HOA Approver step that triggered rework
+        hoaSteps.push({
+            title: "HOA Approver",
+            status: "reworked",
+            subtitle: reworkStep.user ? `${getUserDisplayName(reworkStep.user)} (Sent for Rework)` : "Janani (Sent for Rework)",
+            time: formatStepTime(reworkStep.timestamp),
+            comment: reworkStep.comment
+        });
+
+        lastHoaStepTime = reworkTime;
+    });
+
+    // Current/Active HOA Cycle (after all prior rework cycles)
+    // Only submissions strictly AFTER the last rework step!
+    const currentHoaSubmits = hoaSubmitSteps.filter(s => {
+        const t = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+        return t > lastHoaStepTime;
+    });
+    const latestHoaSubmit = currentHoaSubmits[currentHoaSubmits.length - 1];
+
+    const currentAuditHoa = auditHoaSubmitLogs.filter(a => {
+        const t = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        return t > lastHoaStepTime;
+    }).pop();
+
+    // Has HOA User submitted in this cycle?
+    const hasHoaUserSubmitted = 
+        Boolean(latestHoaSubmit) || 
+        Boolean(currentAuditHoa) || 
+        !["processed", "reworked"].includes(currentStatus) || 
+        Boolean(hoaApproveStep);
+
+    if (!hasHoaUserSubmitted) {
+        // HOA User has not submitted in this cycle yet -> In Queue!
+        hoaSteps.push({
+            title: "HOA User",
+            status: "queued",
+            subtitle: "In Queue",
+            time: null,
+            comment: null
+        });
+
+        hoaSteps.push({
+            title: "HOA Approver",
+            status: "queued",
+            subtitle: "In Queue",
+            time: null,
+            comment: null
+        });
     } else {
-        step2Status = "completed";
-        const hoaActor = hoaUserStep?.user || activeInvoiceData?.uploaded_by || "HOA User";
-        step2Subtitle = getUserDisplayName(hoaActor);
-        step2Time = formatIST(hoaUserStep?.timestamp || activeInvoiceData?.uploaded_at);
-        step2Comment = hoaUserStep?.comment;
+        // HOA User has submitted in this cycle (invoice is at waiting_hoa_approval, waiting_coding, approved, etc.)
+        const hoaActorRaw = (latestHoaSubmit?.user && !isApproverName(latestHoaSubmit.user) ? latestHoaSubmit.user : null) ||
+                            (currentAuditHoa?.user && !isApproverName(currentAuditHoa.user) ? currentAuditHoa.user : null) ||
+                            defaultHoaUser;
+        const hoaActor = getHoaUserDisplayName(hoaActorRaw);
+        const hoaTime = latestHoaSubmit?.timestamp || currentAuditHoa?.timestamp || activeInvoiceData?.updated_at || activeInvoiceData?.uploaded_at;
+
+        hoaSteps.push({
+            title: "HOA User",
+            status: "completed",
+            subtitle: hoaActor,
+            time: formatStepTime(hoaTime),
+            comment: latestHoaSubmit?.comment
+        });
+
+        // Current HOA Approver state
+        if (currentStatus === "waiting_hoa_approval") {
+            hoaSteps.push({
+                title: "HOA Approver",
+                status: "waiting",
+                subtitle: "Waiting",
+                time: null,
+                comment: null
+            });
+        } else if (hoaRejectStep && (!hoaApproveStep || new Date(hoaRejectStep.timestamp).getTime() > hoaApproveTime)) {
+            hoaSteps.push({
+                title: "HOA Approver",
+                status: "rejected",
+                subtitle: getUserDisplayName(hoaRejectStep.user || "Janani"),
+                time: formatStepTime(hoaRejectStep.timestamp),
+                comment: hoaRejectStep.comment
+            });
+        } else if (hoaApproveStep) {
+            hoaSteps.push({
+                title: "HOA Approver",
+                status: "completed",
+                subtitle: getUserDisplayName(hoaApproveStep.user || "Janani"),
+                time: formatStepTime(hoaApproveStep.timestamp),
+                comment: hoaApproveStep.comment
+            });
+        } else {
+            hoaSteps.push({
+                title: "HOA Approver",
+                status: "queued",
+                subtitle: "In Queue",
+                time: null,
+                comment: null
+            });
+        }
     }
 
-    const step2 = {
-        title: "HOA User",
-        status: step2Status,
-        subtitle: step2Subtitle,
-        time: step2Time,
-        comment: step2Comment
-    };
+    // ── AP Stage Identification ──
+    // The AP Stage can ONLY be reached if the final HOA Approver step is COMPLETED (Approved)
+    const finalHoaApprover = hoaSteps.filter(s => s.title === "HOA Approver").slice(-1)[0];
+    const isHoaStageFullyApproved = finalHoaApprover?.status === "completed";
 
-    // ── 3. HOA Approver ──
-    let step3Status = "queued";
-    let step3Subtitle = "In Queue";
-    let step3Time = null;
-    let step3Comment = null;
+    const apSteps = [];
 
-    if (["uploading", "processed"].includes(currentStatus)) {
-        step3Status = "queued";
-        step3Subtitle = "In Queue";
-    } else if (currentStatus === "waiting_hoa_approval") {
-        step3Status = "waiting";
-        step3Subtitle = "Waiting";
-    } else if (currentStatus === "reworked" && isHoaStageRework) {
-        step3Status = "reworked";
-        step3Subtitle = getUserDisplayName(reworkStep?.user || "HOA Approver");
-        step3Time = formatIST(reworkStep?.timestamp);
-        step3Comment = reworkStep?.comment;
-    } else if (currentStatus === "rejected" && isHoaStageReject) {
-        step3Status = "rejected";
-        step3Subtitle = getUserDisplayName(rejectStep?.user || "HOA Approver");
-        step3Time = formatIST(rejectStep?.timestamp);
-        step3Comment = rejectStep?.comment;
+    if (!isHoaStageFullyApproved) {
+        apSteps.push({
+            title: "AP User",
+            status: "queued",
+            subtitle: "In Queue",
+            time: null,
+            comment: null
+        });
+        apSteps.push({
+            title: "AP Approver",
+            status: "queued",
+            subtitle: "In Queue",
+            time: null,
+            comment: null
+        });
     } else {
-        step3Status = "completed";
-        step3Subtitle = getUserDisplayName(hoaApproveStep?.user || "HOA Approver");
-        step3Time = formatIST(hoaApproveStep?.timestamp);
-        step3Comment = hoaApproveStep?.comment;
+        const apReworkSteps = historySteps.filter(s => {
+            const type = (s.step_type || "").toLowerCase();
+            const name = (s.step_name || "").toLowerCase();
+            const comment = (s.comment || "").toLowerCase();
+            if (type !== "reworked") return false;
+            if (name.includes("hoa") || comment.includes("hoa")) return false;
+            const t = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+            return t >= hoaApproveTime;
+        });
+
+        const isApCodeStep = (s) => {
+            const type = (s.step_type || "").toLowerCase();
+            const name = (s.step_name || "").toLowerCase();
+            if (type === "reworked" || name.includes("rework")) return false;
+            if (type === "rejected" || name.includes("reject")) return false;
+            if (["approved", "posted", "sage_posted"].includes(type) || name.includes("approv")) return false;
+            return type === "coding" || 
+                   type === "ap_coded" || 
+                   name.includes("ap user coded") || 
+                   name.includes("coding") || 
+                   name.includes("ap submit") ||
+                   (name.includes("ap user") && !name.includes("rework"));
+        };
+
+        const apCodingSteps = historySteps.filter(isApCodeStep);
+
+        const apApproveStep = [...historySteps].reverse().find(s => {
+            const type = (s.step_type || "").toLowerCase();
+            const name = (s.step_name || "").toLowerCase();
+            return ["approved", "posted", "sage_posted"].includes(type) ||
+                   name.includes("ap approv") ||
+                   name.includes("posted");
+        });
+
+        const apRejectStep = [...historySteps].reverse().find(s => {
+            const type = (s.step_type || "").toLowerCase();
+            const name = (s.step_name || "").toLowerCase();
+            const comment = (s.comment || "").toLowerCase();
+            if (type !== "rejected") return false;
+            return !name.includes("hoa") && !comment.includes("hoa");
+        });
+
+        // Filter out true approvers and generic placeholders from AP User identification
+        const isApproverNameForAp = (name) => {
+            if (!name) return true;
+            const n = String(name).toLowerCase().trim();
+            if (n.includes("janani") || n.includes("pricilla") || n.includes("jagadhish") || n.includes("approv")) return true;
+            if (n.includes("system") || n.includes("admin") || n.includes("ap coder") || n.includes("ap user") || n.includes("waiting") || n === "-" || n === "in queue") return true;
+            return false;
+        };
+
+        const getApUserDisplayName = (name) => {
+            if (name && !isApproverNameForAp(name)) {
+                const dn = getUserDisplayName(name);
+                if (dn && !isApproverNameForAp(dn)) return dn;
+            }
+            return "Varshini";
+        };
+
+        // Identify primary AP user from actual coding steps or audit logs
+        const rawFoundCoder = 
+            apCodingSteps.slice().reverse().find(s => s.user && !isApproverNameForAp(s.user))?.user ||
+            auditApSubmitLogs.slice().reverse().find(a => a.user && !isApproverNameForAp(a.user))?.user ||
+            "Varshini";
+
+        const defaultApUser = getApUserDisplayName(rawFoundCoder);
+
+        let lastApStepTime = hoaApproveTime === Infinity ? 0 : hoaApproveTime;
+
+        // Render previous AP rework cycles
+        apReworkSteps.forEach((apRw, idx) => {
+            const rwTime = apRw.timestamp ? new Date(apRw.timestamp).getTime() : 0;
+            const cycleCodes = apCodingSteps.filter(s => {
+                const t = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+                return t <= rwTime && (lastApStepTime === 0 || t >= lastApStepTime);
+            });
+            const coderStep = cycleCodes[cycleCodes.length - 1];
+
+            const cycleAudit = auditApSubmitLogs.filter(a => {
+                const t = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+                return t <= rwTime && (lastApStepTime === 0 || t >= lastApStepTime);
+            }).pop();
+
+            const apUserRaw = (coderStep?.user && !isApproverNameForAp(coderStep.user) ? coderStep.user : null) ||
+                              (cycleAudit?.user && !isApproverNameForAp(cycleAudit.user) ? cycleAudit.user : null) ||
+                              defaultApUser;
+            const apActor = getApUserDisplayName(apUserRaw);
+            const apTime = coderStep?.timestamp || cycleAudit?.timestamp || (idx > 0 && apReworkSteps[idx - 1] ? apReworkSteps[idx - 1].timestamp : (lastApStepTime !== 0 && lastApStepTime !== Infinity ? lastApStepTime : apRw.timestamp));
+
+            apSteps.push({
+                title: "AP User",
+                status: "completed",
+                subtitle: apActor,
+                time: formatStepTime(apTime),
+                comment: coderStep?.comment
+            });
+
+            apSteps.push({
+                title: "AP Approver",
+                status: "reworked",
+                subtitle: apRw.user ? `${getUserDisplayName(apRw.user)} (Sent for Rework)` : "Jagadhish (Sent for Rework)",
+                time: formatStepTime(apRw.timestamp),
+                comment: apRw.comment
+            });
+
+            lastApStepTime = rwTime;
+        });
+
+        // Current / Active AP cycle
+        const currentApCodes = apCodingSteps.filter(s => {
+            const t = s.timestamp ? new Date(s.timestamp).getTime() : 0;
+            return t > lastApStepTime;
+        });
+        const latestApCode = currentApCodes[currentApCodes.length - 1];
+
+        const currentApAudits = auditApSubmitLogs.filter(a => {
+            const t = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+            return t > lastApStepTime;
+        });
+        const latestApAudit = currentApAudits[currentApAudits.length - 1];
+
+        // Has AP User submitted in this cycle?
+        // While at waiting_coding (or reworked before AP user submits), AP User has not submitted yet -> In Queue!
+        const hasApUserSubmitted = 
+            Boolean(latestApCode) || 
+            Boolean(latestApAudit) || 
+            ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "sage_post_failed"].includes(currentStatus) || 
+            (currentStatus === "rejected" && !!apRejectStep);
+
+        if (!hasApUserSubmitted) {
+            // AP User has not coded/submitted yet -> AP User is In Queue
+            apSteps.push({
+                title: "AP User",
+                status: "queued",
+                subtitle: "In Queue",
+                time: null,
+                comment: null
+            });
+            apSteps.push({
+                title: "AP Approver",
+                status: "queued",
+                subtitle: "In Queue",
+                time: null,
+                comment: null
+            });
+        } else {
+            // AP User has coded and submitted to AP Approver (invoice is at waiting_ap_approval, waiting_approval, approved, etc.)
+            const apUserRaw = (latestApCode?.user && !isApproverNameForAp(latestApCode.user) ? latestApCode.user : null) ||
+                              (latestApAudit?.user && !isApproverNameForAp(latestApAudit.user) ? latestApAudit.user : null) ||
+                              defaultApUser;
+            const apActor = getApUserDisplayName(apUserRaw);
+            const apTime = latestApCode?.timestamp || latestApAudit?.timestamp || activeInvoiceData?.updated_at;
+
+            apSteps.push({
+                title: "AP User",
+                status: "completed",
+                subtitle: apActor,
+                time: formatStepTime(apTime),
+                comment: latestApCode?.comment
+            });
+
+            // AP Approver
+            if (["waiting_ap_approval", "waiting_approval"].includes(currentStatus)) {
+                apSteps.push({
+                    title: "AP Approver",
+                    status: "waiting",
+                    subtitle: "Waiting",
+                    time: null,
+                    comment: null
+                });
+            } else if (currentStatus === "rejected" && apRejectStep) {
+                apSteps.push({
+                    title: "AP Approver",
+                    status: "rejected",
+                    subtitle: getUserDisplayName(apRejectStep.user || "Jagadhish"),
+                    time: formatStepTime(apRejectStep.timestamp),
+                    comment: apRejectStep.comment
+                });
+            } else if (currentStatus === "sage_post_failed") {
+                apSteps.push({
+                    title: "AP Approver",
+                    status: "waiting",
+                    subtitle: "Sage Post Failed - Waiting for repost",
+                    time: formatStepTime(apApproveStep?.timestamp),
+                    comment: apApproveStep?.comment
+                });
+            } else if (["approved", "sage_posted"].includes(currentStatus)) {
+                apSteps.push({
+                    title: "AP Approver",
+                    status: "completed",
+                    subtitle: getUserDisplayName(apApproveStep?.user || (currentStatus === "sage_posted" ? "Approved & Posted to Sage" : "Jagadhish")),
+                    time: formatStepTime(apApproveStep?.timestamp),
+                    comment: apApproveStep?.comment
+                });
+            } else {
+                apSteps.push({
+                    title: "AP Approver",
+                    status: "queued",
+                    subtitle: "In Queue",
+                    time: null,
+                    comment: null
+                });
+            }
+        }
     }
 
-    const step3 = {
-        title: "HOA Approver",
-        status: step3Status,
-        subtitle: step3Subtitle,
-        time: step3Time,
-        comment: step3Comment
-    };
-
-    // ── 4. AP User ──
-    let step4Status = "queued";
-    let step4Subtitle = "In Queue";
-    let step4Time = null;
-    let step4Comment = null;
-
-    if (["uploading", "processed", "waiting_hoa_approval"].includes(currentStatus)) {
-        step4Status = "queued";
-        step4Subtitle = "In Queue";
-    } else if (currentStatus === "waiting_coding") {
-        step4Status = "waiting";
-        step4Subtitle = "Waiting";
-    } else if (currentStatus === "reworked" && !isHoaStageRework) {
-        step4Status = "waiting";
-        step4Subtitle = "Reworked - Waiting for codification";
-        step4Comment = reworkStep?.comment;
-    } else {
-        step4Status = "completed";
-        const apActor = apCodedStep?.user || activeInvoiceData?.last_modified_by || "AP Coder";
-        step4Subtitle = getUserDisplayName(apActor);
-        step4Time = formatIST(apCodedStep?.timestamp || activeInvoiceData?.updated_at);
-        step4Comment = apCodedStep?.comment;
-    }
-
-    const step4 = {
-        title: "AP User",
-        status: step4Status,
-        subtitle: step4Subtitle,
-        time: step4Time,
-        comment: step4Comment
-    };
-
-    // ── 5. AP Approver ──
-    let step5Status = "queued";
-    let step5Subtitle = "In Queue";
-    let step5Time = null;
-    let step5Comment = null;
-
-    if (["uploading", "processed", "waiting_hoa_approval", "waiting_coding"].includes(currentStatus)) {
-        step5Status = "queued";
-        step5Subtitle = "In Queue";
-    } else if (["waiting_ap_approval", "waiting_approval"].includes(currentStatus)) {
-        step5Status = "waiting";
-        step5Subtitle = "Waiting";
-    } else if (currentStatus === "reworked" && !isHoaStageRework) {
-        step5Status = "reworked";
-        step5Subtitle = getUserDisplayName(reworkStep?.user || "AP Approver");
-        step5Time = formatIST(reworkStep?.timestamp);
-        step5Comment = reworkStep?.comment;
-    } else if (currentStatus === "rejected" && !isHoaStageReject) {
-        step5Status = "rejected";
-        step5Subtitle = getUserDisplayName(rejectStep?.user || "AP Approver");
-        step5Time = formatIST(rejectStep?.timestamp);
-        step5Comment = rejectStep?.comment;
-    } else if (currentStatus === "sage_post_failed") {
-        step5Status = "waiting";
-        step5Subtitle = "Sage Post Failed - Waiting for repost";
-        step5Time = formatIST(apApproveStep?.timestamp);
-        step5Comment = apApproveStep?.comment;
-    } else if (["approved", "sage_posted"].includes(currentStatus)) {
-        step5Status = "completed";
-        step5Subtitle = getUserDisplayName(apApproveStep?.user || (currentStatus === "sage_posted" ? "Approved & Posted to Sage" : "AP Approver"));
-        step5Time = formatIST(apApproveStep?.timestamp);
-        step5Comment = apApproveStep?.comment;
-    }
-
-    const step5 = {
-        title: "AP Approver",
-        status: step5Status,
-        subtitle: step5Subtitle,
-        time: step5Time,
-        comment: step5Comment
-    };
-
-    const steps = [step1, step2, step3, step4, step5];
+    const steps = [
+        step1,
+        ...hoaSteps,
+        ...apSteps
+    ];
 
     return (
         <div className="bg-white p-10 font-sans relative">

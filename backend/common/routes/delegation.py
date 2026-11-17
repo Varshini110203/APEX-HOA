@@ -29,6 +29,28 @@ async def create_delegation(
     if "admin" not in user_roles and current_user.email.lower() != delegation.original_approver.lower():
         raise HTTPException(403, "You do not have permission to delegate this user's approvals.")
 
+    # Role matching validation: HOA approver -> HOA approver, AP approver -> AP approver
+    from common.models.db_models import User as DBUser
+    from sqlalchemy import func
+    orig_user = db.query(DBUser).filter(func.lower(DBUser.email) == delegation.original_approver.lower()).first()
+    sub_user = db.query(DBUser).filter(func.lower(DBUser.email) == delegation.substitute_approver.lower()).first()
+    if orig_user and sub_user:
+        orig_role = (orig_user.role or "").lower()
+        sub_role = (sub_user.role or "").lower()
+        orig_dept = (orig_user.department or "").lower()
+        sub_dept = (sub_user.department or "").lower()
+
+        orig_is_hoa = "hoa" in orig_role or "hoa" in orig_dept
+        sub_is_hoa = "hoa" in sub_role or "hoa" in sub_dept
+
+        orig_is_ap = ("ap" in orig_role or "finance" in orig_role or "ap" in orig_dept or "finance" in orig_dept) and not orig_is_hoa
+        sub_is_ap = ("ap" in sub_role or "finance" in sub_role or "ap" in sub_dept or "finance" in sub_dept) and not sub_is_hoa
+
+        if orig_is_hoa and not sub_is_hoa:
+            raise HTTPException(400, "An HOA Approver can only be substituted by another HOA Approver.")
+        if orig_is_ap and not sub_is_ap:
+            raise HTTPException(400, "An AP Approver can only be substituted by another AP Approver.")
+
     # Overlap validation: s1 <= e2 AND e1 >= s2
     overlap_list = delegation_repo.get_multi(
         db,

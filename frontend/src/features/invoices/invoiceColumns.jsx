@@ -64,7 +64,7 @@ const StatusBadge = ({ value, level, label }) => {
 };
 
 // ─── Next Action By helper ───────────────────────────────────────────────────
-const getNextApprover = (row) => {
+export const getNextApprover = (row) => {
     const status = (row?.status || "").toLowerCase();
     if (status === 'sage_posted' || status === 'approved') return "Completed";
     if (status === 'rejected') return "Rejected";

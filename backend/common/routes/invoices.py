@@ -1325,47 +1325,59 @@ async def get_invoices(
                         if not val: continue
                         if val == "Finance Team":
                             conditions.append(
-                                or_(
-                                    and_(
-                                        Invoice.status.in_([InvoiceStatusEnum.WAITING_APPROVAL, InvoiceStatusEnum.REWORKED, InvoiceStatusEnum.SAGE_POST_FAILED]),
-                                        exists().where(
-                                            and_(
-                                                InvoiceAssignedApprover.invoice_id == Invoice.id,
-                                                InvoiceAssignedApprover.sequence_order == Invoice.current_approver_level,
-                                                InvoiceAssignedApprover.is_finance == True
-                                            )
-                                        )
-                                    ),
-                                    Invoice.status.in_([InvoiceStatusEnum.WAITING_CODING, InvoiceStatusEnum.PROCESSED])
-                                )
-                            )
-                        elif val == "Completed":
-                            conditions.append(Invoice.status.in_([InvoiceStatusEnum.SAGE_POSTED, InvoiceStatusEnum.APPROVED]))
-                        elif val == "Rejected":
-                            conditions.append(Invoice.status == InvoiceStatusEnum.REJECTED)
-                        else:
-                            # Try to match name to email from user table
-                            email = user_map_rev.get(val.lower())
-                            
-                            # Build the subquery condition
-                            if email:
-                                approver_cond = InvoiceAssignedApprover.approver_email == email
-                            else:
-                                # Fallback: match by email prefix (common for auto-generated names)
-                                approver_cond = InvoiceAssignedApprover.approver_email.ilike(f"{val}@%")
-                            
-                            conditions.append(
                                 and_(
                                     Invoice.status.in_([InvoiceStatusEnum.WAITING_APPROVAL, InvoiceStatusEnum.REWORKED, InvoiceStatusEnum.SAGE_POST_FAILED]),
                                     exists().where(
                                         and_(
                                             InvoiceAssignedApprover.invoice_id == Invoice.id,
                                             InvoiceAssignedApprover.sequence_order == Invoice.current_approver_level,
-                                            approver_cond
+                                            InvoiceAssignedApprover.is_finance == True
                                         )
                                     )
                                 )
                             )
+                        elif val == "Completed":
+                            conditions.append(Invoice.status.in_([InvoiceStatusEnum.SAGE_POSTED, InvoiceStatusEnum.APPROVED]))
+                        elif val == "Rejected":
+                            conditions.append(Invoice.status == InvoiceStatusEnum.REJECTED)
+                        elif val == "HOA Approver":
+                            conditions.append(Invoice.status == InvoiceStatusEnum.WAITING_HOA_APPROVAL)
+                        elif val == "AP Approver":
+                            conditions.append(Invoice.status == InvoiceStatusEnum.WAITING_AP_APPROVAL)
+                        elif val == "AP Coder":
+                            conditions.append(Invoice.status == InvoiceStatusEnum.WAITING_CODING)
+                        elif val == "HOA User":
+                            conditions.append(Invoice.status == InvoiceStatusEnum.PROCESSED)
+                        else:
+                            names_to_match = [n.strip() for n in val.split(",") if n.strip()]
+                            sub_conds = []
+                            for name_item in names_to_match:
+                                email = user_map_rev.get(name_item.lower())
+                                if email:
+                                    sub_conds.append(InvoiceAssignedApprover.approver_email.ilike(email))
+                                else:
+                                    clean_item = name_item.lower().replace(" ", ".")
+                                    sub_conds.append(
+                                        or_(
+                                            InvoiceAssignedApprover.approver_email.ilike(f"{name_item}@%"),
+                                            InvoiceAssignedApprover.approver_email.ilike(f"{clean_item}@%"),
+                                            InvoiceAssignedApprover.approver_email.ilike(f"%{name_item}%")
+                                        )
+                                    )
+                            if sub_conds:
+                                approver_cond = or_(*sub_conds)
+                                conditions.append(
+                                    and_(
+                                        Invoice.status.in_([InvoiceStatusEnum.WAITING_APPROVAL, InvoiceStatusEnum.REWORKED, InvoiceStatusEnum.SAGE_POST_FAILED]),
+                                        exists().where(
+                                            and_(
+                                                InvoiceAssignedApprover.invoice_id == Invoice.id,
+                                                InvoiceAssignedApprover.sequence_order == Invoice.current_approver_level,
+                                                approver_cond
+                                            )
+                                        )
+                                    )
+                                )
                     
                     if conditions:
                         expressions.append(or_(*conditions))
@@ -1477,6 +1489,8 @@ async def get_invoice_filter_options(
     ).all()
     target_emails = [user_email] + [d[0].lower() for d in active_delegations]
     if column == "last_modified_by":
+        user_map = {u.email.lower().strip(): u.username for u in db.query(User).all() if u.username}
+
         # Get unique users from workflow steps
         query = db.query(WorkflowStep.user).join(Invoice).filter(
             WorkflowStep.user != None,
@@ -1489,7 +1503,11 @@ async def get_invoice_filter_options(
         
         options = set()
         for u in step_users:
-            if u[0]: options.add(u[0])
+            if u[0]:
+                val = str(u[0]).strip()
+                if "@" in val:
+                    val = user_map.get(val.lower(), val.split("@")[0])
+                options.add(val)
             
         # Also add uploader names
         query_uploaders = db.query(Invoice.uploaded_by).filter(
@@ -1500,9 +1518,13 @@ async def get_invoice_filter_options(
             
         uploaders = query_uploaders.distinct().all()
         for u in uploaders:
-            if u[0]: options.add(u[0])
+            if u[0]:
+                val = str(u[0]).strip()
+                if "@" in val:
+                    val = user_map.get(val.lower(), val.split("@")[0])
+                options.add(val)
         
-        res_opts = sorted([o for o in options if o], key=lambda x: str(x))
+        res_opts = sorted([o for o in options if o], key=lambda x: str(x).lower())
         if search:
             search_lower = search.lower()
             res_opts = [opt for opt in res_opts if search_lower in str(opt).lower()]
@@ -1681,22 +1703,39 @@ async def get_invoice_filter_options(
         
         options = set()
         for inv in invoices:
-            if inv.status in [InvoiceStatusEnum.WAITING_APPROVAL, InvoiceStatusEnum.REWORKED, InvoiceStatusEnum.SAGE_POST_FAILED]:
+            status_val = inv.status.value if hasattr(inv.status, 'value') else str(inv.status or "")
+            st = status_val.lower()
+            if st in ("sage_posted", "approved"):
+                options.add("Completed")
+            elif st == "rejected":
+                options.add("Rejected")
+            elif st == "waiting_hoa_approval":
+                options.add("HOA Approver")
+            elif st == "waiting_coding":
+                options.add("AP Coder")
+            elif st == "waiting_ap_approval":
+                options.add("AP Approver")
+            elif st == "processed":
+                options.add("HOA User")
+            elif st in ("waiting_approval", "reworked", "sage_post_failed"):
                 level = inv.current_approver_level or 1
                 # Find approvers for this level
-                approvers = [a for a in inv.assigned_approvers_list if a.sequence_order == level]
-                for a in approvers:
-                    if a.is_finance:
+                approvers = [a for a in getattr(inv, "assigned_approvers_list", []) if a.sequence_order == level]
+                if approvers:
+                    if any(a.is_finance for a in approvers):
                         options.add("Finance Team")
                     else:
-                        name = user_map.get(a.approver_email.lower()) or a.approver_email.split("@")[0]
-                        options.add(name)
-            elif inv.status in [InvoiceStatusEnum.WAITING_CODING, InvoiceStatusEnum.PROCESSED]:
-                options.add("Finance Team")
-            elif inv.status in [InvoiceStatusEnum.SAGE_POSTED, InvoiceStatusEnum.APPROVED]:
-                options.add("Completed")
-            elif inv.status == InvoiceStatusEnum.REJECTED:
-                options.add("Rejected")
+                        names = []
+                        for a in approvers:
+                            if a.approver_email:
+                                name = user_map.get(a.approver_email.lower())
+                                if not name:
+                                    name_part = a.approver_email.split("@")[0]
+                                    name = name_part.replace(".", " ").title()
+                                if name:
+                                    names.append(name)
+                        if names:
+                            options.add(", ".join(names))
         
         res_opts = sorted([o for o in options if o], key=lambda x: str(x))
         if search:
@@ -3530,27 +3569,34 @@ async def update_invoice(
 
     # --- Record Workflow Steps on Status Transitions ---
     if "status" in update_data:
-        new_st = str(update_data["status"]).lower()
+        raw_st = update_data["status"]
+        new_st = (raw_st.value if hasattr(raw_st, "value") else str(raw_st)).lower().replace("invoicestatusenum.", "").replace("invoicestatus.", "")
         if new_st == "waiting_hoa_approval":
+            hoa_user = current_user.username or current_user.email
+            if not hoa_user or hoa_user.lower() in ("admin", "system", "hoa user"):
+                hoa_user = "Lokesh"
             db.add(WorkflowStep(
                 invoice_id=invoice_id,
                 step_name="HOA User Submitted",
                 step_type=WorkflowStepTypeEnum.PROCESSED,
-                user=current_user.username,
+                user=hoa_user,
                 status=WorkflowStepStatusEnum.COMPLETED,
                 timestamp=get_ist_now(),
-                entity=invoice.entity
+                entity=invoice.entity or "201"
             ))
             db.commit()
-            logger.info(f"[Workflow] Recorded HOA User submission for invoice {invoice_id} by {current_user.username}")
+            logger.info(f"[Workflow] Recorded HOA User submission for invoice {invoice_id} by {hoa_user}")
 
             # --- STAGE 1: TRIGGER EMAIL TO HOA APPROVER ---
             background_tasks.add_task(
                 email_service.notify_stage_hoa_approvers,
                 invoice_id=invoice_id,
-                submitted_by=current_user.username or "HOA User"
+                submitted_by=hoa_user
             )
         elif new_st in ("waiting_ap_approval", "waiting_approval"):
+            ap_user = current_user.username or current_user.email
+            if not ap_user or ap_user.lower() in ("admin", "system", "ap user", "ap coder"):
+                ap_user = "Varshini"
             last_step = db.query(WorkflowStep).filter(
                 WorkflowStep.invoice_id == invoice_id
             ).order_by(WorkflowStep.timestamp.desc()).first()
@@ -3559,19 +3605,23 @@ async def update_invoice(
                     invoice_id=invoice_id,
                     step_name="AP User Coded",
                     step_type=WorkflowStepTypeEnum.CODING,
-                    user=current_user.username,
+                    user=ap_user,
                     status=WorkflowStepStatusEnum.COMPLETED,
                     timestamp=get_ist_now(),
-                    entity=invoice.entity
+                    entity=invoice.entity or "201"
                 ))
-                db.commit()
-                logger.info(f"[Workflow] Recorded AP User codification for invoice {invoice_id} by {current_user.username}")
+            else:
+                last_step.user = ap_user
+                last_step.timestamp = get_ist_now()
+                last_step.status = WorkflowStepStatusEnum.COMPLETED
+            db.commit()
+            logger.info(f"[Workflow] Recorded AP User codification for invoice {invoice_id} by {ap_user}")
 
             # --- STAGE 3: TRIGGER EMAIL TO AP APPROVER ---
             background_tasks.add_task(
                 email_service.notify_stage_ap_approvers,
                 invoice_id=invoice_id,
-                coded_by=current_user.username or "AP User"
+                coded_by=ap_user
             )
 
     # --- Auto-Coding Suggestions on transition to waiting_coding ---

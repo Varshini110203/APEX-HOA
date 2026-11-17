@@ -368,11 +368,19 @@ def _record_step(
     comment: Optional[str] = None,
     entity: Optional[str] = None,
 ) -> WorkflowStep:
+    user_name = user_email
+    if user_email and "@" in user_email:
+        u_obj = db.query(User).filter(func.lower(User.email) == user_email.lower().strip()).first()
+        if u_obj and u_obj.username:
+            user_name = u_obj.username
+        else:
+            user_name = user_email.split("@")[0]
+
     step = WorkflowStep(
         invoice_id=invoice_id,
         step_name=step_name,
         step_type=step_type,
-        user=user_email,
+        user=user_name,
         status=status,
         approver_number=approver_number,
         comment=comment,
