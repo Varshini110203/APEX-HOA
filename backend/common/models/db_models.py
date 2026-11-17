@@ -777,6 +777,7 @@ class DeletedInvoice(Base):
 
     # ---- Original invoice identity ----
     original_invoice_id = Column(Integer, nullable=False, index=True)
+    request_id = Column(String(50), nullable=True, index=True)
     filename = Column(String(500), nullable=True)
     original_filename = Column(String(500), nullable=True)
     file_path = Column(String(1000), nullable=True)

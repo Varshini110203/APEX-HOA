@@ -1383,6 +1383,28 @@ async def get_invoices(
                         expressions.append(or_(*conditions))
                     del extra_filters["next_approver"]
 
+                if "workflow_users" in extra_filters:
+                    vals = extra_filters["workflow_users"]
+                    if not isinstance(vals, list):
+                        vals = [vals]
+                    
+                    conditions = []
+                    for val in vals:
+                        if not val:
+                            continue
+                        if "Finance Team" in val:
+                            conditions.append(
+                                exists().where(
+                                    and_(
+                                        InvoiceAssignedApprover.invoice_id == Invoice.id,
+                                        InvoiceAssignedApprover.is_finance == True
+                                    )
+                                )
+                            )
+                    if conditions:
+                        expressions.append(or_(*conditions))
+                    del extra_filters["workflow_users"]
+
                 # Convert list of values to list if they're not already
                 for k, v in extra_filters.items():
                     if isinstance(v, list):
@@ -1685,6 +1707,9 @@ async def get_invoice_filter_options(
                 if "status" in extra_filters:
                     _apply_status_label_filters(extra_filters.pop("status"), expressions, db)
 
+                if "workflow_users" in extra_filters:
+                    del extra_filters["workflow_users"]
+
                 repo_filters.update(extra_filters)
         except Exception as e:
             print(f"Error parsing filters in filter-options: {e}")
@@ -1761,6 +1786,49 @@ async def get_invoice_filter_options(
                 formatted_options.append(label)
                 seen.add(label)
         res_opts = sorted(formatted_options)
+        if search:
+            search_lower = search.lower()
+            res_opts = [opt for opt in res_opts if search_lower in str(opt).lower()]
+        return res_opts
+
+    if column == "workflow_users":
+        options = set()
+
+        if tab == "delete":
+            query = db.query(DeletedInvoice).filter(DeletedInvoice.entity == entity)
+            query = deleted_invoice_repo._apply_filters(query, repo_filters)
+            for expr in expressions:
+                query = query.filter(expr)
+            invoices = query.all()
+            for inv in invoices:
+                roles = ["HOA User", "HOA Approver", "AP User", "AP Approver"]
+                raw_json = getattr(inv, "assigned_approvers_json", None)
+                if raw_json:
+                    try:
+                        assigned_snap = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                    except Exception:
+                        assigned_snap = []
+                    if isinstance(assigned_snap, list):
+                        for a in assigned_snap:
+                            if isinstance(a, dict) and a.get("is_finance") and "Finance Team" not in roles:
+                                roles.append("Finance Team")
+                options.add(", ".join(roles))
+        else:
+            query = db.query(Invoice).filter(Invoice.entity == entity)
+            query = invoice_repo._apply_filters(query, repo_filters)
+            for expr in expressions:
+                query = query.filter(expr)
+            
+            invoices = query.options(joinedload(Invoice.assigned_approvers_list)).all()
+            for inv in invoices:
+                roles = ["HOA User", "HOA Approver", "AP User", "AP Approver"]
+                approvers = getattr(inv, "assigned_approvers_list", []) or []
+                for a in approvers:
+                    if getattr(a, "is_finance", False) and "Finance Team" not in roles:
+                        roles.append("Finance Team")
+                options.add(", ".join(roles))
+
+        res_opts = sorted([o for o in options if o], key=lambda x: str(x))
         if search:
             search_lower = search.lower()
             res_opts = [opt for opt in res_opts if search_lower in str(opt).lower()]
@@ -1996,9 +2064,15 @@ async def list_deleted_invoices(
             else:
                 last_modified_by = last_modified_by.split("@")[0]
 
+        req_id = getattr(r, "request_id", None)
+        if not req_id and isinstance(extracted_data, dict):
+            req_id = extracted_data.get("invoice_details", {}).get("request_id", {}).get("value")
+
         return {
             "id": r.id,
             "original_invoice_id": r.original_invoice_id,
+            "request_id": req_id or "-",
+            "requestNo": req_id or "-",
             "filename": r.original_filename or r.filename,
             "vendor_id": r.vendor_id,
             "vendor_name": r.vendor_name,
@@ -2067,9 +2141,15 @@ async def get_deleted_invoice(
         if line_items_list:
             extracted_data["is_coded"] = True
 
+    req_id = getattr(record, "request_id", None)
+    if not req_id and isinstance(extracted_data, dict):
+        req_id = extracted_data.get("invoice_details", {}).get("request_id", {}).get("value")
+
     res = {
         "id": record.id,
         "original_invoice_id": record.original_invoice_id,
+        "request_id": req_id,
+        "requestNo": req_id,
         "filename": record.filename,
         "original_filename": record.original_filename,
         "file_path": record.file_path,
@@ -4053,6 +4133,7 @@ async def delete_invoice(
         # ------------------------------------------------------------------
         deleted_record = DeletedInvoice(
             original_invoice_id=invoice.id,
+            request_id=getattr(invoice, "request_id", None),
             filename=invoice.filename,
             original_filename=invoice.original_filename,
             file_path=invoice.file_path,
@@ -4291,6 +4372,7 @@ async def bulk_delete_invoices(
 
             deleted_record = DeletedInvoice(
                 original_invoice_id=invoice.id,
+                request_id=getattr(invoice, "request_id", None),
                 filename=invoice.filename,
                 original_filename=invoice.original_filename,
                 file_path=invoice.file_path,

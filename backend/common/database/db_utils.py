@@ -218,6 +218,15 @@ def invoice_to_dict(invoice: Invoice, include_relationships: bool = True, minima
             
     result["last_modified_by"] = last_modified_by
     result["approver"] = last_modified_by 
+
+    # ─── Calculate Workflow Users (Stage Role Names) ───
+    roles = ["HOA User", "HOA Approver", "AP User", "AP Approver"]
+    if invoice.assigned_approvers_list:
+        for a in invoice.assigned_approvers_list:
+            if getattr(a, "is_finance", False) and "Finance Team" not in roles:
+                roles.append("Finance Team")
+
+    result["workflow_users"] = ", ".join(roles) 
     
     if include_relationships and not minimal:
         # Status history (Heavy relationship, skip in minimal/list mode)
