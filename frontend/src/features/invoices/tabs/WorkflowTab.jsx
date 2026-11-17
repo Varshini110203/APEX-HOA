@@ -28,6 +28,20 @@ const getStatusConfig = (status) => {
                 lineStyle: "solid",
                 defaultSubtitle: "Completed"
             };
+        case "deleted":
+            return {
+                titleColor: "text-[#1AB394]",
+                subtitleColor: "text-gray-600",
+                timeColor: "text-gray-400",
+                icon: (
+                    <div className="w-6 h-6 flex items-center justify-center rounded-full bg-[#1AB394]">
+                        <CheckOutlined className="!text-white text-[10px] font-black" />
+                    </div>
+                ),
+                lineColor: "bg-gray-200",
+                lineStyle: "solid",
+                defaultSubtitle: "Deleted"
+            };
         case "waiting":
         case "pending":
             return {
@@ -101,8 +115,10 @@ const WorkflowTab = () => {
     const { getAuditData } = getAuditflowSync(!isArchived ? viewInvoiceId : null);
 
     const auditLogsList = useMemo(() => {
-        return Array.isArray(getAuditData) ? getAuditData : [];
-    }, [getAuditData]);
+        if (Array.isArray(getAuditData) && getAuditData.length > 0) return getAuditData;
+        if (Array.isArray(activeInvoiceData?.audit_logs)) return activeInvoiceData.audit_logs;
+        return [];
+    }, [getAuditData, activeInvoiceData?.audit_logs]);
 
     const auditHoaSubmitLogs = useMemo(() => {
         return auditLogsList.filter(a => {
@@ -311,11 +327,17 @@ const WorkflowTab = () => {
     }).pop();
 
     // Has HOA User submitted in this cycle?
+    const hasPriorHoaStatus = (activeInvoiceData?.status_history || []).some(h => {
+        const s = (h.status || "").toLowerCase();
+        return ["waiting_hoa_approval", "waiting_coding", "waiting_ap_approval", "waiting_approval", "approved", "sage_posted"].includes(s);
+    });
+
     const hasHoaUserSubmitted = 
         Boolean(latestHoaSubmit) || 
         Boolean(currentAuditHoa) || 
-        !["processed", "reworked"].includes(currentStatus) || 
-        Boolean(hoaApproveStep);
+        Boolean(hoaApproveStep) ||
+        hasPriorHoaStatus ||
+        !["processed", "reworked", "deleted", "archived"].includes(currentStatus);
 
     if (!hasHoaUserSubmitted) {
         // HOA User has not submitted in this cycle yet -> In Queue!
@@ -532,9 +554,15 @@ const WorkflowTab = () => {
 
         // Has AP User submitted in this cycle?
         // While at waiting_coding (or reworked before AP user submits), AP User has not submitted yet -> In Queue!
+        const hasPriorApStatus = (activeInvoiceData?.status_history || []).some(h => {
+            const s = (h.status || "").toLowerCase();
+            return ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted"].includes(s);
+        });
+
         const hasApUserSubmitted = 
             Boolean(latestApCode) || 
             Boolean(latestApAudit) || 
+            hasPriorApStatus ||
             ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "sage_post_failed"].includes(currentStatus) || 
             (currentStatus === "rejected" && !!apRejectStep);
 
@@ -615,11 +643,85 @@ const WorkflowTab = () => {
         }
     }
 
-    const steps = [
-        step1,
-        ...hoaSteps,
-        ...apSteps
-    ];
+    // ── Deletion Detection ──
+    const isDeleted = useMemo(() => {
+        if (currentStatus === "deleted") return true;
+        if (activeInvoiceData?.is_deleted) return true;
+        if (Boolean(activeInvoiceData?.deleted_by) || Boolean(activeInvoiceData?.deleted_at)) return true;
+        if (historySteps.some(s => (s.step_type || "").toLowerCase() === "deleted" || (s.step_name || "").toLowerCase() === "deleted")) return true;
+        if (auditLogsList.some(a => (a.action || "").toLowerCase().includes("delete"))) return true;
+        return false;
+    }, [currentStatus, activeInvoiceData, historySteps, auditLogsList]);
+
+    const deletedStep = useMemo(() => {
+        if (!isDeleted) return null;
+
+        const deletedStepFromHistory = historySteps.slice().reverse().find(s => 
+            (s.step_type || "").toLowerCase() === "deleted" || 
+            (s.step_name || "").toLowerCase() === "deleted"
+        );
+        const auditDeleteLog = auditLogsList.slice().reverse().find(a => 
+            (a.action || "").toLowerCase().includes("delete")
+        );
+
+        let rawDeletedActor = 
+            deletedStepFromHistory?.user ||
+            activeInvoiceData?.deleted_by ||
+            auditDeleteLog?.user ||
+            currentUser?.username ||
+            currentUser?.email ||
+            "User";
+
+        const deletedActor = getUserDisplayName(rawDeletedActor);
+
+        let rawDeletedTime = 
+            deletedStepFromHistory?.timestamp ||
+            activeInvoiceData?.deleted_at ||
+            auditDeleteLog?.timestamp;
+
+        let comment = deletedStepFromHistory?.comment || auditDeleteLog?.comment;
+        if (!comment && auditDeleteLog?.details) {
+            try {
+                const d = typeof auditDeleteLog.details === "string" ? JSON.parse(auditDeleteLog.details) : auditDeleteLog.details;
+                comment = d.comment;
+            } catch (e) {}
+        }
+
+        return {
+            title: "Deleted",
+            status: "deleted",
+            subtitle: deletedActor || "User",
+            time: formatStepTime(rawDeletedTime),
+            comment: comment && !comment.toLowerCase().includes("invoice deleted by user") ? comment : null
+        };
+    }, [isDeleted, historySteps, auditLogsList, activeInvoiceData, currentUser]);
+
+    const steps = useMemo(() => {
+        const rawSteps = [
+            step1,
+            ...hoaSteps,
+            ...apSteps
+        ];
+
+        if (!isDeleted || !deletedStep) {
+            return rawSteps;
+        }
+
+        // When an invoice is deleted, show only the executed stages prior to deletion,
+        // followed by the Deleted step. Omit all upcoming or queued actions.
+        const executedSteps = rawSteps.filter(s => {
+            const st = (s.status || "").toLowerCase();
+            const sub = (s.subtitle || "").toLowerCase();
+            if (st === "queued" || st === "waiting" || st === "upcoming") return false;
+            if (sub === "in queue" || sub === "waiting") return false;
+            return true;
+        });
+
+        return [
+            ...executedSteps,
+            deletedStep
+        ];
+    }, [step1, hoaSteps, apSteps, isDeleted, deletedStep]);
 
     return (
         <div className="bg-white p-10 font-sans relative">

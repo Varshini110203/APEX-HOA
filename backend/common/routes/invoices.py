@@ -2184,22 +2184,36 @@ async def get_deleted_invoice(
         "workflow_steps": _safe_json(record.workflow_steps_json),
         "coding": coding_row,
         "audit_logs": _safe_json(record.audit_logs_json),
-        "is_archived": True
+        "is_archived": True,
+        "is_deleted": True
     }
 
-    # Resolve User Names for Workflow Steps
+    # Resolve User Names for Workflow Steps & Deletion
+    involved_users = set()
     if res["workflow_steps"]:
-        involved_users = set()
         for step in res["workflow_steps"]:
             if step.get("user"):
                 involved_users.add(step.get("user").lower())
-        
-        if involved_users:
-            user_list = db.query(User).filter(User.email.in_(list(involved_users))).all()
-            user_names_map = {u.email.lower(): u.username for u in user_list}
-            # For each step, if it has a user email, try to attach username if not already there
-            # (Though history snapshot might already have some names, resolution ensures consistency)
-            res["user_names"] = user_names_map
+    
+    if record.deleted_by:
+        involved_users.add(record.deleted_by.lower())
+    if record.uploaded_by:
+        involved_users.add(record.uploaded_by.lower())
+
+    if involved_users:
+        user_list = db.query(User).filter(
+            or_(
+                User.email.in_(list(involved_users)),
+                User.username.in_(list(involved_users))
+            )
+        ).all()
+        user_names_map = {}
+        for u in user_list:
+            if u.email:
+                user_names_map[u.email.lower()] = u.username or u.email.split("@")[0]
+            if u.username:
+                user_names_map[u.username.lower()] = u.username
+        res["user_names"] = user_names_map
 
     # Normalize approved_by
     approved_by_snap = _safe_json(record.approved_by_json) or []
