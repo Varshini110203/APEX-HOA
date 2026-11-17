@@ -3086,15 +3086,15 @@ async def download_approval_report(
     temp_dir = tempfile.gettempdir()
     local_temp_path = os.path.join(temp_dir, f"invoice_{invoice_id}_approval_report.pdf")
 
-    # Let's check if the blob exists in Azure Blob Storage
+    # Always regenerate the approval PDF to ensure all latest fields, Request ID, and Approvers are up-to-date
     blob_client = container_client.get_blob_client(blob_name)
-    if not blob_client.exists():
-        # If not, regenerate it (this will automatically upload it to Azure Blob Storage and delete local file)
-        try:
-            from common.utils.erp_locator import get_erp_function
-            generate_approval_pdf = get_erp_function("services.pdf_service", "generate_approval_pdf")
-            generate_approval_pdf(db, invoice_id)
-        except Exception as e:
+    try:
+        from common.utils.erp_locator import get_erp_function
+        generate_approval_pdf = get_erp_function("services.pdf_service", "generate_approval_pdf")
+        generate_approval_pdf(db, invoice_id)
+    except Exception as e:
+        logger.error(f"[DownloadApprovalReport] Failed to generate latest PDF: {e}", exc_info=True)
+        if not blob_client.exists():
             raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {e}")
 
     # Now download the blob to local_temp_path

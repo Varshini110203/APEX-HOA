@@ -444,9 +444,12 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
     )
 
     invoice_ref = _safe_str(invoice.invoice_number, "N/A")
+    req_id_val = _safe_str(getattr(invoice, "request_id", None))
+
     banner_items = [f"Invoice Reference: {invoice_ref}", f"ID: {invoice_id}"]
-    if getattr(invoice, "request_id", None):
-        banner_items.append(f"Request ID: {invoice.request_id}")
+    if req_id_val != "—":
+        banner_items.append(f"Request ID: {req_id_val}")
+
     story.append(Paragraph(
         "  ·  ".join(banner_items), banner_style
     ))
@@ -463,7 +466,7 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
 
     summary_rows = [
         ("Invoice ID",          invoice_id),
-        ("Request ID",          _safe_str(getattr(invoice, "request_id", None))),
+        ("Request ID",          req_id_val),
         ("Invoice Number",      _safe_str(invoice.invoice_number)),
         ("Vendor Name",         _safe_str(invoice.vendor_name)),
         ("Vendor ID",           _safe_str(invoice.vendor_id)),
