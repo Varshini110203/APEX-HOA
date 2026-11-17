@@ -339,14 +339,77 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
     inv_po       = _extract_po(extracted_str)
     amount_str   = f"{inv_currency} {inv_total}".strip() if inv_total != "—" else "—"
 
-    approved_emails = [a.approver_email for a in (invoice.approved_by_list or [])]
+    approved_emails = [a.approver_email for a in (invoice.approved_by_list or []) if getattr(a, "approver_email", None)]
+
+    # If empty, query direct database records from InvoiceApprovedBy table
+    if not approved_emails:
+        try:
+            from common.models.db_models import InvoiceApprovedBy
+            direct_approved = db.query(InvoiceApprovedBy).filter(InvoiceApprovedBy.invoice_id == invoice_id).all()
+            approved_emails = [a.approver_email for a in direct_approved if getattr(a, "approver_email", None)]
+        except Exception as e:
+            logger.warning(f"[PDFService] Error querying InvoiceApprovedBy: {e}")
+
+    # If still empty, collect approvers from recorded workflow steps
+    if not approved_emails and workflow_steps:
+        approval_step_types = {
+            "approved", "hoa_approved", "level_approved",
+            "threshold_approved", "posting_approved"
+        }
+        for step in workflow_steps:
+            stype = (step.step_type or "").lower().strip()
+            sname = (step.step_name or "").lower().strip()
+            sstatus = (step.status or "").lower().strip()
+            user_val = (step.user or "").strip()
+            if not user_val:
+                continue
+            if (
+                stype in approval_step_types
+                or "approv" in sname
+                or "approv" in stype
+                or sstatus == "approved"
+            ):
+                if user_val.lower() not in [e.lower() for e in approved_emails]:
+                    approved_emails.append(user_val)
+
+    # If still empty, check audit logs for approval actions
+    if not approved_emails and audit_logs:
+        for log in audit_logs:
+            act = (log.action or "").lower().strip()
+            user_val = (log.user or "").strip()
+            if not user_val:
+                continue
+            if "approv" in act:
+                if user_val.lower() not in [e.lower() for e in approved_emails]:
+                    approved_emails.append(user_val)
+
+    # Clean and deduplicate approvers preserving order
+    seen_approvers = set()
+    unique_approved = []
+    for em in approved_emails:
+        em_clean = str(em).strip()
+        if em_clean and em_clean.lower() not in seen_approvers:
+            seen_approvers.add(em_clean.lower())
+            unique_approved.append(em_clean)
+    approved_emails = unique_approved
+
     assigned_emails = [
         a.approver_email
         for a in sorted(
             (invoice.assigned_approvers_list or []),
             key=lambda x: x.sequence_order
         )
+        if getattr(a, "approver_email", None)
     ]
+    if not assigned_emails:
+        try:
+            from common.models.db_models import InvoiceAssignedApprover
+            direct_assigned = db.query(InvoiceAssignedApprover).filter(
+                InvoiceAssignedApprover.invoice_id == invoice_id
+            ).order_by(InvoiceAssignedApprover.sequence_order).all()
+            assigned_emails = [a.approver_email for a in direct_assigned if getattr(a, "approver_email", None)]
+        except Exception:
+            pass
 
     # ── 4. Build PDF story ────────────────────────────────────────────────────
     styles = getSampleStyleSheet()
@@ -381,8 +444,14 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
     )
 
     invoice_ref = _safe_str(invoice.invoice_number, "N/A")
+    req_id_val = _safe_str(getattr(invoice, "request_id", None))
+
+    banner_items = [f"Invoice Reference: {invoice_ref}", f"ID: {invoice_id}"]
+    if req_id_val != "—":
+        banner_items.append(f"Request ID: {req_id_val}")
+
     story.append(Paragraph(
-        f"Invoice Reference: {invoice_ref}  ·  ID: {invoice_id}", banner_style
+        "  ·  ".join(banner_items), banner_style
     ))
     story.append(Paragraph(
         f"Entity: {_safe_str(invoice.entity)}  ·  Vendor: {_safe_str(invoice.vendor_name)}  ·  "
@@ -396,17 +465,18 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
     story += _section_heading("1.  Invoice Summary", styles)
 
     summary_rows = [
-        ("Invoice ID",       invoice_id),
-        ("Invoice Number",   _safe_str(invoice.invoice_number)),
-        ("Vendor Name",      _safe_str(invoice.vendor_name)),
-        ("Vendor ID",        _safe_str(invoice.vendor_id)),
-        ("Entity",           _safe_str(invoice.entity)),
-        ("Invoice Date",     inv_date),
-        ("PO Number",        inv_po),
-        ("Total Amount",     amount_str),
-        ("Status",           "FULLY APPROVED ✓"),
-        ("Uploaded By",      _safe_str(invoice.uploaded_by)),
-        ("Upload Date",      _fmt_dt(invoice.uploaded_at)),
+        ("Invoice ID",          invoice_id),
+        ("Request ID",          req_id_val),
+        ("Invoice Number",      _safe_str(invoice.invoice_number)),
+        ("Vendor Name",         _safe_str(invoice.vendor_name)),
+        ("Vendor ID",           _safe_str(invoice.vendor_id)),
+        ("Entity",              _safe_str(invoice.entity)),
+        ("Invoice Date",        inv_date),
+        ("PO Number",           inv_po),
+        ("Total Amount",        amount_str),
+        ("Status",              "FULLY APPROVED ✓"),
+        ("Uploaded By",         _safe_str(invoice.uploaded_by)),
+        ("Upload Date",         _fmt_dt(invoice.uploaded_at)),
         ("Required Approvers",  _safe_str(invoice.required_approvers)),
         ("Assigned Approvers",  ", ".join(assigned_emails) if assigned_emails else "—"),
         ("Approved By",         ", ".join(approved_emails) if approved_emails else "—"),
@@ -567,19 +637,22 @@ def generate_approval_pdf(db: Session, invoice_id: int) -> str:
         "sfh", fontSize=10, textColor=PRIMARY, fontName="Helvetica-Bold", spaceAfter=4
     )))
 
+    req_id_str = _safe_str(getattr(invoice, "request_id", None))
     signoff_rows = [
-        [Paragraph("<b>Invoice</b>", signoff_style),  Paragraph(invoice_ref, signoff_style),
-         Paragraph("<b>Entity</b>", signoff_style),   Paragraph(_safe_str(invoice.entity), signoff_style)],
-        [Paragraph("<b>Vendor</b>", signoff_style),   Paragraph(_safe_str(invoice.vendor_name), signoff_style),
-         Paragraph("<b>Amount</b>", signoff_style),   Paragraph(amount_str, signoff_style)],
+        [Paragraph("<b>Invoice</b>", signoff_style),     Paragraph(invoice_ref, signoff_style),
+         Paragraph("<b>Request ID</b>", signoff_style),  Paragraph(req_id_str, signoff_style)],
+        [Paragraph("<b>Vendor</b>", signoff_style),      Paragraph(_safe_str(invoice.vendor_name), signoff_style),
+         Paragraph("<b>Entity</b>", signoff_style),      Paragraph(_safe_str(invoice.entity), signoff_style)],
+        [Paragraph("<b>Amount</b>", signoff_style),      Paragraph(amount_str, signoff_style),
+         Paragraph("<b>Report Date</b>", signoff_style), Paragraph(get_ist_now().strftime("%d %b %Y"), signoff_style)],
         [Paragraph("<b>Approved By</b>", signoff_style),
          Paragraph(", ".join(approved_emails) if approved_emails else "—", signoff_bold),
-         Paragraph("<b>Report Date</b>", signoff_style),
-         Paragraph(get_ist_now().strftime("%d %b %Y"), signoff_style)],
+         Paragraph("", signoff_style),                   Paragraph("", signoff_style)],
     ]
 
     so_tbl = Table(signoff_rows, colWidths=[3*cm, 6*cm, 3*cm, 6*cm])
     so_tbl.setStyle(TableStyle([
+        ("SPAN",         (1, 3), (3, 3)),
         ("BACKGROUND",   (0, 0), (-1, -1), LIGHT_BG),
         ("BOX",          (0, 0), (-1, -1), 0.8, SECONDARY),
         ("INNERGRID",    (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e0")),

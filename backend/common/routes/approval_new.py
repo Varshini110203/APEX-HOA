@@ -624,6 +624,10 @@ async def _finalize_and_post(db: Session, invoice: Invoice, current_user: UserRe
             entity=entity,
         )
 
+    # Record approver email in invoice.approved_by_list
+    if email not in [a.approver_email.lower() for a in (invoice.approved_by_list or [])]:
+        invoice.approved_by_list.append(InvoiceApprovedBy(approver_email=email))
+
     await audit_service.log_action(
         db=db,
         invoice_id=invoice_id,
@@ -1512,6 +1516,10 @@ async def approve_invoice(
             entity=entity,
             details={"comment": payload.comment}
         )
+        # Record approver email in invoice.approved_by_list
+        if email not in [a.approver_email.lower() for a in (invoice.approved_by_list or [])]:
+            invoice.approved_by_list.append(InvoiceApprovedBy(approver_email=email))
+
         # Step 8: request comes to AP coder
         _update_invoice_status(db, invoice, InvoiceStatus.WAITING_CODING)
         db.commit()
@@ -1560,6 +1568,10 @@ async def approve_invoice(
             comment=payload.comment,
             entity=entity,
         )
+        # Record approver email in invoice.approved_by_list
+        if email not in [a.approver_email.lower() for a in (invoice.approved_by_list or [])]:
+            invoice.approved_by_list.append(InvoiceApprovedBy(approver_email=email))
+
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
