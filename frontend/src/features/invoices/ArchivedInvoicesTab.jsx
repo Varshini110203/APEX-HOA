@@ -6,6 +6,7 @@ import DataTable from "../../components/ui/DataTable";
 import { getCondensedColumns, getFullColumns } from "./invoiceColumns";
 
 const ACCESSOR_TO_DB_FIELD = {
+    request_id: "request_id",
     vendor_name: "vendor_name",
     vendor_id: "vendor_id",
     invoice_number: "invoice_number",

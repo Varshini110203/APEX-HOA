@@ -50,6 +50,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
         setNavigationOrigin,
         setIsPreviewLoading,
         entityMaster,
+        isEditingEnabled: storeEditingEnabled,
+        setIsEditingEnabled,
     } = useInvoiceStore();
 
     const { handleSave } = useSaveInvoice();
@@ -84,6 +86,16 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
     // Approvers can enable editing, save, and repeat as many times as needed.
     const [editingEnabled, setEditingEnabled] = useState(false);
 
+    useEffect(() => {
+        if (activeInvoiceData?.is_editing_enabled) {
+            setEditingEnabled(true);
+            setIsEditingEnabled?.(true);
+        } else {
+            setEditingEnabled(false);
+            setIsEditingEnabled?.(false);
+        }
+    }, [activeInvoiceData?.is_editing_enabled, setIsEditingEnabled]);
+
     const handleEnableEditing = async () => {
         try {
             await workflowActionsAPI.enableEditing(viewInvoiceId, {
@@ -101,6 +113,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
             }
         }
         setEditingEnabled(true);
+        setIsEditingEnabled?.(true);
         setActiveInvoiceData({
             ...activeInvoiceData,
             is_editing_enabled: true,
@@ -208,6 +221,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                 await queryClient.invalidateQueries({ queryKey: ["invoices"] });
                 await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
                 resetQuickView();
+            setEditingEnabled(false);
+            setIsEditingEnabled?.(false);
                 setInvoiceSection(1);
                 navigate("/invoices");
             } else {
@@ -225,6 +240,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
 
 
     const handleDiscard = () => {
+        setEditingEnabled(false);
+        setIsEditingEnabled?.(false);
         setIsPreviewLoading(true);
         setTimeout(() => {
             setInvoiceData(activeInvoiceData, true);
@@ -298,6 +315,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                 await queryClient.invalidateQueries({ queryKey: ["invoices"] });
                 await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
                 resetQuickView();
+            setEditingEnabled(false);
+            setIsEditingEnabled?.(false);
                 setInvoiceSection(1);
                 navigate("/invoices");
             } else {
@@ -343,6 +362,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                 // on the next save attempt.
                 if (editingEnabled) {
                     setEditingEnabled(false);
+                    setIsEditingEnabled?.(false);
                     const latestData = useInvoiceStore.getState().activeInvoiceData;
                     setActiveInvoiceData({
                         ...latestData,
@@ -485,6 +505,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
             queryClient.invalidateQueries({ queryKey: ["dashboard"] });
 
             resetQuickView();
+            setEditingEnabled(false);
+            setIsEditingEnabled?.(false);
 
             // If it was a recall, navigate back to the coding queue
             if (action === "recall") {

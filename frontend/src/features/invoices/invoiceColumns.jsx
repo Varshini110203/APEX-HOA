@@ -64,7 +64,7 @@ const StatusBadge = ({ value, level, label }) => {
 };
 
 // ─── Next Action By helper ───────────────────────────────────────────────────
-const getNextApprover = (row) => {
+export const getNextApprover = (row) => {
     const status = (row?.status || "").toLowerCase();
     if (status === 'sage_posted' || status === 'approved') return "Completed";
     if (status === 'rejected') return "Rejected";
@@ -101,33 +101,19 @@ const getNextApprover = (row) => {
 
 // ─── Workflow Users helper ───────────────────────────────────────────────────
 export const getWorkflowUsers = (row) => {
-    if (!row?.assigned_approvers || !Array.isArray(row.assigned_approvers)) return "-";
+    if (row?.workflow_users && row.workflow_users !== "-") {
+        return row.workflow_users;
+    }
 
-    const allUsers = [];
-    row.assigned_approvers.forEach(stage => {
-        if (stage.is_finance === true) {
-            if (!allUsers.includes("Finance Team")) allUsers.push("Finance Team");
-        } else {
-            const names = stage.names || stage.emails;
-            if (Array.isArray(names)) {
-                names.forEach(n => {
-                    let formatted = n;
-                    if (typeof n === 'string' && n.includes('@')) {
-                        formatted = n.split('@')[0].split('.').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-                    }
-                    if (!allUsers.includes(formatted)) allUsers.push(formatted);
-                });
-            } else if (typeof names === 'string') {
-                let formatted = names;
-                if (names.includes('@')) {
-                    formatted = names.split('@')[0].split('.').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
-                }
-                if (!allUsers.includes(formatted)) allUsers.push(formatted);
+    const roles = ["HOA User", "HOA Approver", "AP User", "AP Approver"];
+    if (row?.assigned_approvers && Array.isArray(row.assigned_approvers) && row.assigned_approvers.length > 0) {
+        row.assigned_approvers.forEach(stage => {
+            if (stage.is_finance === true && !roles.includes("Finance Team")) {
+                roles.push("Finance Team");
             }
-        }
-    });
-
-    return allUsers.length > 0 ? allUsers.join(", ") : "-";
+        });
+    }
+    return roles.join(", ");
 };
 
 // ─── Actions cell helper ──────────────────────────────────────────────────────
@@ -194,7 +180,7 @@ export const getCondensedColumns = (onView, onDelete, onArchive, userRole, openi
         accessor: "request_id",
         sortable: true,
         filterable: true,
-        render: (val) => val || "-",
+        render: (val, row) => val || row?.requestNo || row?.requestId || "-",
     },
     {
         header: "Vendor Name",
@@ -298,7 +284,7 @@ export const getFullColumns = (onView, onDelete, onArchive, userRole, openingInv
         accessor: "request_id",
         sortable: true,
         filterable: true,
-        render: (val) => val || "-",
+        render: (val, row) => val || row?.requestNo || row?.requestId || "-",
     },
     {
         header: "Vendor Name",

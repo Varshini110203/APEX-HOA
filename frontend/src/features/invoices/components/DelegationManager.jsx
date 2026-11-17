@@ -31,9 +31,9 @@ const DelegationManager = ({ isAdmin = false, onUpdate, loading: pageLoading = f
     const [itemsPerPage, setItemsPerPage] = useState(15);
 
     useEffect(() => {
+        fetchApprovers();
         if (isAdmin) {
             fetchUsers();
-            fetchApprovers();
         }
         fetchDelegations();
     }, [isAdmin, fetchUsers, fetchDelegations, fetchApprovers]);
@@ -45,18 +45,58 @@ const DelegationManager = ({ isAdmin = false, onUpdate, loading: pageLoading = f
         }
     }, [isAdmin, user?.email]);
 
-    const approverOptions = isAdmin
-        ? [
-            { label: 'Select Approver', value: '' },
-            ...(storeApprovers || []).map(u => ({
-                label: u.label,
-                value: u.value.toLowerCase()
-            }))
-        ]
-        : [
-            { label: 'Select Approver', value: '' },
-            ...(approversProp || [])
-        ];
+    const rawApprovers = isAdmin
+        ? (storeApprovers || [])
+        : ((approversProp && approversProp.length > 0) ? approversProp : (storeApprovers || []));
+
+    const approverOptions = [
+        { label: 'Select Approver', value: '', role: '', department: '' },
+        ...rawApprovers.map(u => ({
+            label: u.label,
+            value: (u.value || u.email || '').toLowerCase(),
+            role: u.role,
+            department: u.department
+        }))
+    ];
+
+    const getApproverInfo = (email) => {
+        if (!email) return { isHoa: false, isAp: false };
+        const norm = email.toLowerCase().trim();
+        const fromOpt = approverOptions.find(o => o.value?.toLowerCase() === norm);
+        const fromStore = (storeApprovers || []).find(a => (a.value || a.email || '').toLowerCase() === norm);
+        const fromProp = (approversProp || []).find(a => (a.value || a.email || '').toLowerCase() === norm);
+        const fromUser = (users || []).find(u => u.email?.toLowerCase() === norm);
+        const isCurrent = user?.email?.toLowerCase() === norm;
+
+        const role = (
+            fromOpt?.role ||
+            fromStore?.role ||
+            fromProp?.role ||
+            fromUser?.role ||
+            (isCurrent ? (user?.role || '') : '')
+        ).toLowerCase();
+
+        const dept = (
+            fromOpt?.department ||
+            fromStore?.department ||
+            fromProp?.department ||
+            fromUser?.department ||
+            (isCurrent ? (user?.department || '') : '')
+        ).toLowerCase();
+
+        const isHoa = role.includes("hoa") || dept.includes("hoa");
+        const isAp = !isHoa && (
+            role.includes("ap") || 
+            role.includes("finance") || 
+            role.includes("coder") ||
+            dept.includes("ap") || 
+            dept.includes("finance")
+        );
+
+        return { role, dept, isHoa, isAp };
+    };
+
+    const fromApproverInfo = getApproverInfo(form.original_approver);
 
     const fromApproverOptions = approverOptions.filter(opt => {
         if (!opt.value) return true;
@@ -65,8 +105,36 @@ const DelegationManager = ({ isAdmin = false, onUpdate, loading: pageLoading = f
 
     const substituteApproverOptions = approverOptions.filter(opt => {
         if (!opt.value) return true;
-        return opt.value.toLowerCase() !== form.original_approver?.toLowerCase();
+        if (opt.value.toLowerCase() === form.original_approver?.toLowerCase()) {
+            return false;
+        }
+
+        // If from approver is HOA Approver -> only display HOA Approvers
+        if (fromApproverInfo.isHoa) {
+            const candidateInfo = getApproverInfo(opt.value);
+            return candidateInfo.isHoa;
+        }
+
+        // If from approver is AP Approver -> only display AP Approvers
+        if (fromApproverInfo.isAp) {
+            const candidateInfo = getApproverInfo(opt.value);
+            return candidateInfo.isAp;
+        }
+
+        return true;
     });
+
+    // Auto-clear invalid substitute when From Approver changes
+    useEffect(() => {
+        if (form.substitute_approver && form.original_approver) {
+            const isValid = substituteApproverOptions.some(
+                opt => opt.value && opt.value.toLowerCase() === form.substitute_approver.toLowerCase()
+            );
+            if (!isValid) {
+                setForm(prev => ({ ...prev, substitute_approver: '' }));
+            }
+        }
+    }, [form.original_approver, substituteApproverOptions]);
 
     const handleAdd = async () => {
         if (!form.original_approver || !form.substitute_approver || !form.start_date || !form.end_date) {

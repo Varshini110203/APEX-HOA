@@ -286,6 +286,9 @@ def get_coding_suggestions(db: Session, vendor_name: str, extracted_items: List[
             "is_tds": is_tds
         })
         descriptions.append(normalized_desc)
+
+    if not descriptions:
+        return []
     
     # Process embeddings in parallel to overcome sequential network latency
     with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(descriptions), 10)) as executor:

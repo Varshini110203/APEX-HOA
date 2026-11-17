@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Modal, Table, Space, message, Spin } from "antd";
 import { Trash2, Download, Paperclip, FileText, Image, FileSpreadsheet, Eye, ExternalLink, X, AlertCircle } from "lucide-react";
 import { useInvoiceStore } from "../../../store/invoice.store";
@@ -30,8 +30,8 @@ const formatDate = (dateStr) => {
 };
 
 const AttachmentsTab = () => {
-    const { activeInvoiceData, setActiveInvoiceData, viewInvoiceId } = useInvoiceStore();
-    const { activeRole } = useAuthStore();
+    const { activeInvoiceData, setActiveInvoiceData, viewInvoiceId, isEditingEnabled: storeEditingEnabled } = useInvoiceStore();
+    const { user, activeRole } = useAuthStore();
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [itemToDelete, setItemToDelete] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -42,7 +42,124 @@ const AttachmentsTab = () => {
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState(null);
 
-    const canModify = ["scanner", "coder", "admin", "hoa user", "hoa approver", "ap user", "ap approver", "ar user"].includes(activeRole?.toLowerCase()) || activeRole?.toLowerCase()?.includes('user') || activeRole?.toLowerCase() === 'admin';
+    const roleClean = (activeRole || user?.role || "").toLowerCase().trim();
+    const isHoaRole = roleClean.includes("hoa");
+    const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder")) && !isHoaRole;
+    const isApproverRole = roleClean.includes("approver");
+
+    const isAdmin = roleClean === "admin";
+    const isHoaApprover = isHoaRole && isApproverRole;
+    const isHoaUser = isHoaRole && !isApproverRole;
+    const isApApprover = isApRole && isApproverRole;
+    const isApUser = isApRole && !isApproverRole;
+
+    const isEditingEnabled = Boolean(
+        storeEditingEnabled ||
+        activeInvoiceData?.is_editing_enabled ||
+        (activeInvoiceData?.editing_enabled_by &&
+         activeInvoiceData?.editing_enabled_by?.toLowerCase() === user?.email?.toLowerCase())
+    );
+
+    const status = (activeInvoiceData?.status || "").toLowerCase();
+
+    // Check if user's stage/step is active
+    const isHoaUserStepActive = isHoaUser && (status === "processed" || status === "reworked");
+    const isApUserStepActive = isApUser && status === "waiting_coding";
+    const isHoaApproverStepActive = isHoaApprover && status === "waiting_hoa_approval";
+    const isApApproverStepActive = isApApprover && ["waiting_ap_approval", "waiting_approval", "sage_post_failed"].includes(status);
+
+    const showAddButton = useMemo(() => {
+        if (activeInvoiceData?.is_archived) return false;
+        if (["deleted"].includes(status)) return false;
+
+        // Admin can always see the button
+        if (isAdmin) return true;
+
+        // If HOA User's step is over, do not show the button
+        if (isHoaUser) {
+            return isHoaUserStepActive;
+        }
+
+        // If AP User's step is over, do not show the button
+        if (isApUser) {
+            return isApUserStepActive;
+        }
+
+        // For HOA Approver: show only during their step
+        if (isHoaApprover) {
+            return isHoaApproverStepActive;
+        }
+
+        // For AP Approver: show only during their step
+        if (isApApprover) {
+            return isApApproverStepActive;
+        }
+
+        // Generic approver role
+        if (isApproverRole) {
+            return isEditingEnabled;
+        }
+
+        // Generic user role (scanner, coder, ar user)
+        if (roleClean.includes("user") || roleClean === "scanner" || roleClean === "coder") {
+            return status === "processed" || status === "waiting_coding";
+        }
+
+        return false;
+    }, [
+        activeInvoiceData?.is_archived,
+        status,
+        isAdmin,
+        isHoaUser,
+        isHoaUserStepActive,
+        isApUser,
+        isApUserStepActive,
+        isHoaApprover,
+        isHoaApproverStepActive,
+        isApApprover,
+        isApApproverStepActive,
+        isApproverRole,
+        isEditingEnabled,
+        roleClean,
+    ]);
+
+    const canAddAttachment = useMemo(() => {
+        if (!showAddButton) return false;
+
+        // Admin can always add attachments
+        if (isAdmin) return true;
+
+        // HOA Approver and AP Approver:
+        // Enabled ONLY if they click the "Enable Editing" button
+        if (isHoaApprover || isApApprover || isApproverRole) {
+            return isEditingEnabled;
+        }
+
+        // HOA User and AP User (when their step is active):
+        // Enabled
+        if (isHoaUserStepActive || isApUserStepActive) {
+            return true;
+        }
+
+        // Other active user roles
+        if (roleClean.includes("user") || roleClean === "scanner" || roleClean === "coder") {
+            return true;
+        }
+
+        return false;
+    }, [
+        showAddButton,
+        isAdmin,
+        isHoaApprover,
+        isApApprover,
+        isApproverRole,
+        isEditingEnabled,
+        isHoaUserStepActive,
+        isApUserStepActive,
+        roleClean,
+    ]);
+
+    const canModify = canAddAttachment;
 
     const attachments = activeInvoiceData?.attachments || [];
 
@@ -52,7 +169,12 @@ const AttachmentsTab = () => {
                 try {
                     setLoading(true);
                     const updated = await getInvoiceById(viewInvoiceId);
-                    setActiveInvoiceData(updated);
+                    const currentData = useInvoiceStore.getState().activeInvoiceData;
+                    setActiveInvoiceData({
+                        ...updated,
+                        is_editing_enabled: currentData?.is_editing_enabled ?? updated?.is_editing_enabled,
+                        editing_enabled_by: currentData?.editing_enabled_by ?? updated?.editing_enabled_by,
+                    });
                 } catch (err) {
                     console.error("Failed to load invoice attachments:", err);
                 } finally {
@@ -180,7 +302,12 @@ const AttachmentsTab = () => {
             setItemToDelete(null);
             // Reload invoice data
             const updated = await getInvoiceById(viewInvoiceId);
-            setActiveInvoiceData(updated);
+            const currentData = useInvoiceStore.getState().activeInvoiceData;
+            setActiveInvoiceData({
+                ...updated,
+                is_editing_enabled: currentData?.is_editing_enabled ?? updated?.is_editing_enabled,
+                editing_enabled_by: currentData?.editing_enabled_by ?? updated?.editing_enabled_by,
+            });
         } catch (err) {
             console.error("Error deleting attachment:", err);
             message.error(err.response?.data?.detail || "Failed to delete attachment.");
@@ -192,7 +319,12 @@ const AttachmentsTab = () => {
     const handleUploadSuccess = async () => {
         try {
             const updated = await getInvoiceById(viewInvoiceId);
-            setActiveInvoiceData(updated);
+            const currentData = useInvoiceStore.getState().activeInvoiceData;
+            setActiveInvoiceData({
+                ...updated,
+                is_editing_enabled: currentData?.is_editing_enabled ?? updated?.is_editing_enabled,
+                editing_enabled_by: currentData?.editing_enabled_by ?? updated?.editing_enabled_by,
+            });
         } catch (err) {
             console.error("Failed to reload invoice details after upload:", err);
         }
@@ -299,10 +431,24 @@ const AttachmentsTab = () => {
                         Attachments ({attachments.length})
                     </span>
                 </div>
-                {canModify && (
+                {showAddButton && (
                     <button
-                        onClick={() => setIsUploadModalOpen(true)}
-                        className="px-4 h-9 flex items-center justify-center text-[13px] font-semibold rounded-lg text-white bg-[#22B4E6] hover:opacity-90 transition-all border-0 cursor-pointer"
+                        onClick={() => {
+                            if (canAddAttachment) setIsUploadModalOpen(true);
+                        }}
+                        disabled={!canAddAttachment}
+                        className={`px-4 h-9 flex items-center justify-center text-[13px] font-semibold rounded-lg transition-all border-0 ${
+                            canAddAttachment
+                                ? "text-white bg-[#22B4E6] hover:opacity-90 cursor-pointer shadow-sm"
+                                : "text-gray-400 bg-gray-200 cursor-not-allowed opacity-60"
+                        }`}
+                        title={
+                            !canAddAttachment && (isHoaApprover || isApApprover || isApproverRole)
+                                ? "Click 'Enable Editing' in the top bar to add attachments"
+                                : !canAddAttachment
+                                ? "You do not have permission to add attachments"
+                                : "Add Attachment"
+                        }
                     >
                         Add Attachment
                     </button>
@@ -326,11 +472,15 @@ const AttachmentsTab = () => {
                             <div className="py-12 text-center text-gray-400 flex flex-col items-center gap-2">
                                 <Paperclip size={32} strokeWidth={1} />
                                 <span>No attachments found</span>
-                                {canModify && (
+                                {showAddButton && canAddAttachment ? (
                                     <span className="text-xs text-gray-400">
                                         Click "Add Attachment" to upload pdf, jpg, jpeg, png, xls, xlsx, csv files
                                     </span>
-                                )}
+                                ) : showAddButton && !canAddAttachment && (isHoaApprover || isApApprover || isApproverRole) ? (
+                                    <span className="text-xs text-gray-400">
+                                        Click "Enable Editing" in the top bar to upload attachments
+                                    </span>
+                                ) : null}
                             </div>
                         )
                     }}

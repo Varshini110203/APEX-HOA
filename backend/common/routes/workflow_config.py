@@ -530,5 +530,6 @@ async def get_approvers(db: Session = Depends(get_db)):
     return [{
         "value": a.email,
         "label": f"{a.username or a.email.split('@')[0]} ({a.email})",
-        "department": a.department
+        "department": a.department,
+        "role": a.role
     } for a in approvers if a.email]

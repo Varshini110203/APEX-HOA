@@ -276,6 +276,7 @@ const ApprovalsPage = () => {
             header: "Workflow Users",
             accessor: "workflow_users",
             filterable: true,
+            onGetOptions: (col, search) => getInvoiceFilterOptions(col, { approvals_view: true }, 'approvals', search),
             getFilterValue: (row) => getWorkflowUsers(row),
             render: (_, row) => getWorkflowUsers(row),
         },
