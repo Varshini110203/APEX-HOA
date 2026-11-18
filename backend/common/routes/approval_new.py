@@ -19,7 +19,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from sqlalchemy import func
+from sqlalchemy import func, or_
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -30,7 +30,7 @@ from common.config.settings import settings
 from common.auth.jwt import get_current_user
 from common.database.database import get_db
 from common.dependencies import get_current_entity
-from common.models.db_models import Invoice, User, WorkflowStep, EntityMaster, InvoiceApprovedBy, InvoiceAssignedApprover
+from common.models.db_models import Invoice, User, WorkflowStep, EntityMaster, InvoiceApprovedBy, InvoiceAssignedApprover, AuditLog
 from common.models.user import UserResponse
 from common.repository.repositories import (
     coding_repo,
@@ -678,27 +678,28 @@ async def _finalize_and_post(db: Session, invoice: Invoice, current_user: UserRe
     else:
         invoice = invoice_repo.get(db, invoice_id)
         _update_invoice_status(db, invoice, InvoiceStatus.SAGE_POST_FAILED)
+        error_reason = sage_result.get("message") or "Unknown error"
         _record_step(
             db, invoice_id,
             step_name="Sage Post Failed",
             step_type=StepType.POST_FAILED,
             user_email=email,
-            comment=sage_result.get("message"),
+            comment=error_reason,
             entity=entity,
         )
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
-            action=AuditAction.SAGE_POST_FAILED,
+            action=AuditAction.SAGE_POST_FAILED.value if hasattr(AuditAction.SAGE_POST_FAILED, 'value') else AuditAction.SAGE_POST_FAILED,
             user=current_user.username,
             entity=entity,
-            details={"error": sage_result.get("message")}
+            details={"Reason": error_reason, "error": error_reason, "failure_reason": error_reason}
         )
         db.commit()
-        logger.error(f"[SagePost] Sage posting failed for invoice {invoice_id}: {sage_result.get('message')}")
+        logger.error(f"[SagePost] Sage posting failed for invoice {invoice_id}: {error_reason}")
         return ActionResponse(
             success=False,
-            message=f"Approved, but Sage posting failed: {sage_result['message']}",
+            message=f"Approved, but Sage posting failed: {error_reason}",
             new_status=InvoiceStatus.SAGE_POST_FAILED,
             sage_post_result=sage_result,
         )
@@ -1229,6 +1230,28 @@ async def get_ui_status_from_frontend(
             sage_post_error=None,
             rework_error=None,
         )
+
+    if current_status == InvoiceStatus.SAGE_POST_FAILED and is_ap_approver:
+        return ApproverUIStatus(
+            invoice_id=str(invoice_id),
+            current_status=current_status,
+            current_level=1,
+            workflow_type="ap_approval",
+            can_approve=False,
+            can_reject=False,
+            can_rework=False,
+            can_enable_editing=True,
+            can_repost_sage=True,
+            is_posting_approver=True,
+            is_threshold_approver=False,
+            is_finance_team=False,
+            user_level=1,
+            level_already_approved=False,
+            already_acted=False,
+            assigned_approvers=[],
+            sage_post_error=None,
+            rework_error=None,
+        )
  
     steps = _steps_for_invoice(db, invoice_id)
     # ── Filter steps to the current cycle (post-rework/recall) ──
@@ -1444,7 +1467,7 @@ async def get_ui_status_from_frontend(
     # ── can_enable_editing logic ─────────────────────────────────────────────
     can_enable_editing = (
         ((is_finance or is_threshold_approver or is_posting_approver) and can_act)
-        or (current_status == InvoiceStatus.SAGE_POST_FAILED and (is_posting_approver or delegated_posting))
+        or (current_status == InvoiceStatus.SAGE_POST_FAILED and (is_posting_approver or delegated_posting or is_ap_approver))
     )
 
     rework_error = _get_rework_error(db, current_level, assigned)
@@ -1454,11 +1477,11 @@ async def get_ui_status_from_frontend(
         current_status=current_status,
         current_level=current_level,
         workflow_type=payload.get("workflow_type"),
-        can_approve=can_act,
-        can_reject=can_act,
-        can_rework=can_act,
+        can_approve=can_act and current_status != InvoiceStatus.SAGE_POST_FAILED,
+        can_reject=can_act and current_status != InvoiceStatus.SAGE_POST_FAILED,
+        can_rework=can_act and current_status != InvoiceStatus.SAGE_POST_FAILED,
         can_enable_editing=can_enable_editing,
-        can_repost_sage=current_status == InvoiceStatus.SAGE_POST_FAILED and (is_posting_approver or delegated_posting),
+        can_repost_sage=current_status == InvoiceStatus.SAGE_POST_FAILED and (is_posting_approver or delegated_posting or is_ap_approver),
         is_posting_approver=is_posting_approver,
         is_threshold_approver=is_threshold_approver,
         is_finance_team=is_finance,
@@ -1616,18 +1639,27 @@ async def approve_invoice(
         else:
             invoice = invoice_repo.get(db, invoice_id)
             _update_invoice_status(db, invoice, InvoiceStatus.SAGE_POST_FAILED)
+            error_reason = sage_result.get("message") or "Unknown error"
             _record_step(
                 db, invoice_id,
                 step_name=f"{erp_name} Post Failed",
                 step_type=StepType.POST_FAILED,
                 user_email=email,
-                comment=sage_result.get("message"),
+                comment=error_reason,
                 entity=entity,
+            )
+            await audit_service.log_action(
+                db=db,
+                invoice_id=invoice_id,
+                action=AuditAction.SAGE_POST_FAILED.value if hasattr(AuditAction.SAGE_POST_FAILED, 'value') else AuditAction.SAGE_POST_FAILED,
+                user=current_user.username,
+                entity=entity,
+                details={"Reason": error_reason, "error": error_reason, "failure_reason": error_reason}
             )
             db.commit()
             return ActionResponse(
                 success=False,
-                message=f"Invoice approved but Sage post failed: {sage_result.get('message')}",
+                message=f"Invoice approved but Sage post failed: {error_reason}",
                 new_status=InvoiceStatus.SAGE_POST_FAILED,
                 sage_post_result=sage_result,
             )
@@ -2188,7 +2220,7 @@ async def reject_invoice(
             new_status=InvoiceStatus.REJECTED,
         )
 
-    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
+    if current_status in (InvoiceStatus.WAITING_AP_APPROVAL, InvoiceStatus.SAGE_POST_FAILED):
         is_ap_approver = _is_ap_approver(user_role_lower)
         if not is_ap_approver:
             raise HTTPException(403, "You are not authorized to reject this invoice at AP stage")
@@ -2395,7 +2427,7 @@ async def rework_invoice(
             next_level=1,
         )
 
-    if current_status == InvoiceStatus.WAITING_AP_APPROVAL:
+    if current_status in (InvoiceStatus.WAITING_AP_APPROVAL, InvoiceStatus.SAGE_POST_FAILED):
         is_ap_approver = _is_ap_approver(user_role_lower)
         if not is_ap_approver:
             raise HTTPException(403, "You are not authorized to send this invoice for rework at AP stage")
@@ -2744,9 +2776,28 @@ async def repost_to_sage(
             delegated_posting = True
             break
 
-    if email not in [e.lower() for e in posting_emails] and not delegated_posting:
+    user_role_lower = (current_user.role or "").lower()
+    is_ap_approver = _is_ap_approver(user_role_lower)
+
+    if email not in [e.lower() for e in posting_emails] and not delegated_posting and not is_ap_approver:
         raise HTTPException(
-            403, "Only the posting approver (or their delegate) can repost to Sage")
+            403, "Only the posting approver or AP approver (or their delegate) can repost to Sage")
+
+    # Count previous repost attempts for this invoice
+    existing_steps = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_name.ilike("%repost%"),
+            WorkflowStep.step_type.ilike("%repost%")
+        )
+    ).count()
+
+    existing_audits = db.query(AuditLog).filter(
+        AuditLog.invoice_id == invoice_id,
+        AuditLog.action.ilike("%repost%")
+    ).count()
+
+    repost_attempt = max(existing_steps, existing_audits) + 1
 
     # Attempt repost
     sage_result = await _post_to_sage(invoice_id, entity, db)
@@ -2760,7 +2811,7 @@ async def repost_to_sage(
         erp_name = settings.TOOL.capitalize()
         logger.info(
             f"[{erp_name}Repost] Successfully reposted invoice {invoice_id} to {erp_name}. "
-            f"Bill number: {resolved_bill_number}"
+            f"Bill number: {resolved_bill_number} (Attempt {repost_attempt})"
         )
 
         invoice.sage_bill_number = resolved_bill_number
@@ -2768,19 +2819,23 @@ async def repost_to_sage(
         _record_step(
             db,
             invoice_id,
-            step_name=f"Reposted to {erp_name} — Success",
+            step_name=f"Reposted to {erp_name} (Attempt {repost_attempt})",
             step_type=StepType.POSTED,
             user_email=email,
-            comment=f"{erp_name} Bill Number: {resolved_bill_number}",
+            comment=f"{erp_name} Bill Number: {resolved_bill_number} (Repost Attempt {repost_attempt})",
             entity=entity,
         )
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
-            action=f"{erp_name} Reposted",
+            action=f"{erp_name} Reposted (Attempt {repost_attempt})",
             user=current_user.username,
             entity=entity,
-            details={f"{erp_name.lower()}_bill_number": resolved_bill_number},
+            details={
+                f"{erp_name.lower()}_bill_number": resolved_bill_number,
+                "repost_attempt": repost_attempt,
+                "repost_count": repost_attempt
+            },
             sage_bill_number=resolved_bill_number
         )
         db.commit()
@@ -2789,34 +2844,41 @@ async def repost_to_sage(
         final_sage_result["sage_bill_number"] = resolved_bill_number
         return ActionResponse(
             success=True,
-            message=f"Invoice successfully reposted to {erp_name}.",
+            message=f"Invoice successfully reposted to {erp_name} (Attempt {repost_attempt}).",
             new_status=InvoiceStatus.SAGE_POSTED,
             sage_post_result=final_sage_result,
         )
     else:
         erp_name = settings.TOOL.capitalize()
+        error_reason = sage_result.get("message") or "Unknown error"
         _record_step(
             db,
             invoice_id,
-            step_name=f"{erp_name} Repost Failed",
+            step_name=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
             step_type=StepType.POST_FAILED,
             user_email=email,
-            comment=sage_result.get("message"),
+            comment=error_reason,
             entity=entity,
         )
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
-            action=f"{erp_name} Repost Failed",
+            action=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
             user=current_user.username,
             entity=entity,
-            details={"error": sage_result.get("message")}
+            details={
+                "Reason": error_reason,
+                "error": error_reason,
+                "failure_reason": error_reason,
+                "repost_attempt": repost_attempt,
+                "repost_count": repost_attempt
+            }
         )
         db.commit()
-        logger.error(f"[{erp_name}Repost] {erp_name} repost failed for invoice {invoice_id} by {current_user.username}: {sage_result.get('message')}")
+        logger.error(f"[{erp_name}Repost] {erp_name} repost failed for invoice {invoice_id} by {current_user.username}: {error_reason}")
         return ActionResponse(
             success=False,
-            message=f"{erp_name} repost failed: {sage_result['message']}",
+            message=f"{erp_name} repost failed (Attempt {repost_attempt}): {error_reason}",
             new_status=InvoiceStatus.SAGE_POST_FAILED,
             sage_post_result=sage_result,
         )

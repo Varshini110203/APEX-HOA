@@ -786,17 +786,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                             {/* ── AP Approver buttons: ONLY at waiting_ap_approval / sage_post_failed ── */}
                             {isApApprover && (
                                 <>
-                                    {currentStatus === "sage_post_failed" && (
-                                        <button
-                                            onClick={() => openModal("repost-sage")}
-                                            disabled={!canAction("can_repost_sage")}
-                                            className={getBtnClass("orange", canAction("can_repost_sage"))}
-                                        >
-                                            {busy("repost-sage") ? "Reposting…" : "Repost"}
-                                        </button>
-                                    )}
-
-                                    {["waiting_ap_approval", "waiting_approval"].includes(currentStatus) && (
+                                    {/* Enable Editing / Save button (also available when sage post/repost failed so AP approver can fix issues) */}
+                                    {["waiting_ap_approval", "waiting_approval", "sage_post_failed"].includes(currentStatus) && (
                                         <>
                                             {!editingEnabled && (
                                                 <button
@@ -820,7 +811,21 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                                     </CustomButton>
                                                 </div>
                                             )}
+                                        </>
+                                    )}
 
+                                    {currentStatus === "sage_post_failed" && (
+                                        <button
+                                            onClick={() => openModal("repost-sage")}
+                                            disabled={!canAction("can_repost_sage")}
+                                            className={getBtnClass("orange", canAction("can_repost_sage"))}
+                                        >
+                                            {busy("repost-sage") ? "Reposting…" : "Repost"}
+                                        </button>
+                                    )}
+
+                                    {["waiting_ap_approval", "waiting_approval"].includes(currentStatus) && (
+                                        <>
                                             <button
                                                 onClick={() => openModal("rework")}
                                                 disabled={!canAction("can_rework")}

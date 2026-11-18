@@ -57,6 +57,22 @@ const getStatusConfig = (status) => {
                 lineStyle: "dashed",
                 defaultSubtitle: "Waiting"
             };
+        case "sage_post_failed":
+        case "post_failed":
+        case "failed":
+            return {
+                titleColor: "text-[#ED5565]",
+                subtitleColor: "text-gray-600",
+                timeColor: "text-gray-400",
+                icon: (
+                    <div className="w-6 h-6 flex items-center justify-center rounded-full bg-[#ED5565]">
+                        <CloseOutlined className="!text-white text-[10px] font-black" />
+                    </div>
+                ),
+                lineColor: "bg-gray-200",
+                lineStyle: "dashed",
+                defaultSubtitle: "Sage Post Failed"
+            };
         case "rejected":
             return {
                 titleColor: "text-[#ED5565]",
@@ -616,20 +632,109 @@ const WorkflowTab = () => {
                     comment: apRejectStep.comment
                 });
             } else if (currentStatus === "sage_post_failed") {
+                const failureStep = [...historySteps].reverse().find(s => {
+                    const type = (s.step_type || "").toLowerCase();
+                    const name = (s.step_name || "").toLowerCase();
+                    return ["post_failed", "sage_post_failed"].includes(type) ||
+                           name.includes("post failed") || name.includes("sage post failed") || name.includes("repost failed");
+                });
+
+                const failureAudit = [...auditLogsList].reverse().find(a => {
+                    const action = (a.action || "").toLowerCase();
+                    return action.includes("failed") || action.includes("failure");
+                });
+
+                // Calculate total repost count
+                const repostSteps = historySteps.filter(s => {
+                    const name = (s.step_name || "").toLowerCase();
+                    const type = (s.step_type || "").toLowerCase();
+                    return name.includes("repost") || type.includes("repost");
+                });
+                const repostAudits = auditLogsList.filter(a => {
+                    const action = (a.action || "").toLowerCase();
+                    return action.includes("repost");
+                });
+                const repostCount = Math.max(repostSteps.length, repostAudits.length);
+
+                let failureReason = failureStep?.comment;
+                if (!failureReason && failureAudit?.details) {
+                    try {
+                        const d = typeof failureAudit.details === "string" ? JSON.parse(failureAudit.details) : failureAudit.details;
+                        failureReason = d.Reason || d.reason || d.failure_reason || d.error || d.message;
+                    } catch (e) {}
+                }
+                if (!failureReason && failureAudit?.comment) {
+                    failureReason = failureAudit.comment;
+                }
+                if (!failureReason) {
+                    failureReason = activeInvoiceData?.sage_post_error;
+                }
+                if (!failureReason && activeInvoiceData?.validation_results) {
+                    try {
+                        const v = typeof activeInvoiceData.validation_results === "string" ? JSON.parse(activeInvoiceData.validation_results) : activeInvoiceData.validation_results;
+                        failureReason = v?.error || v?.message;
+                    } catch (e) {}
+                }
+
+                const apApproverName = getUserDisplayName(
+                    apApproveStep?.user || failureStep?.user || failureAudit?.user || "AP Approver"
+                );
+
+                const repostLabel = repostCount > 0 
+                    ? `Reposted ${repostCount} time${repostCount > 1 ? 's' : ''}` 
+                    : null;
+
+                const subtitle = repostLabel 
+                    ? `${apApproverName} (Sage Post Failed - ${repostLabel} - Waiting for repost)`
+                    : `${apApproverName} (Sage Post Failed - Waiting for repost)`;
+
+                // If there are multiple past repost attempts, render previous attempts first
+                if (repostSteps.length > 1) {
+                    repostSteps.slice(0, -1).forEach((step, idx) => {
+                        const attemptNum = idx + 1;
+                        apSteps.push({
+                            title: step.step_name || `Sage Repost (Attempt ${attemptNum})`,
+                            status: "sage_post_failed",
+                            subtitle: `${getUserDisplayName(step.user || apApproverName)} (Failed)`,
+                            time: formatStepTime(step.timestamp),
+                            comment: step.comment,
+                            repostCount: attemptNum
+                        });
+                    });
+                }
+
                 apSteps.push({
-                    title: "AP Approver",
-                    status: "waiting",
-                    subtitle: "Sage Post Failed - Waiting for repost",
-                    time: formatStepTime(apApproveStep?.timestamp),
-                    comment: apApproveStep?.comment
+                    title: repostCount > 0 ? `Sage Repost (Attempt ${repostCount})` : "AP Approver",
+                    status: "sage_post_failed",
+                    subtitle: subtitle,
+                    time: formatStepTime(failureStep?.timestamp || apApproveStep?.timestamp || failureAudit?.timestamp),
+                    comment: failureReason || "Sage posting failed",
+                    repostCount: repostCount
                 });
             } else if (["approved", "sage_posted"].includes(currentStatus)) {
+                // Calculate repost count for completed/posted
+                const repostSteps = historySteps.filter(s => {
+                    const name = (s.step_name || "").toLowerCase();
+                    const type = (s.step_type || "").toLowerCase();
+                    return name.includes("repost") || type.includes("repost");
+                });
+                const repostAudits = auditLogsList.filter(a => {
+                    const action = (a.action || "").toLowerCase();
+                    return action.includes("repost");
+                });
+                const repostCount = Math.max(repostSteps.length, repostAudits.length);
+
+                const repostSubtitle = repostCount > 0
+                    ? `${getUserDisplayName(apApproveStep?.user || "AP Approver")} (Approved & Posted to Sage after ${repostCount} repost${repostCount > 1 ? 's' : ''})`
+                    : getUserDisplayName(apApproveStep?.user || (currentStatus === "sage_posted" ? "Approved & Posted to Sage" : "Jagadhish"));
+
                 apSteps.push({
-                    title: "AP Approver",
+                    title: repostCount > 0 ? `AP Approver - Reposted (Attempt ${repostCount})` : "AP Approver",
                     status: "completed",
-                    subtitle: getUserDisplayName(apApproveStep?.user || (currentStatus === "sage_posted" ? "Approved & Posted to Sage" : "Jagadhish")),
+                    subtitle: repostSubtitle,
                     time: formatStepTime(apApproveStep?.timestamp),
-                    comment: apApproveStep?.comment
+                    comment: apApproveStep?.comment,
+                    repostCount: repostCount
                 });
             } else {
                 apSteps.push({
@@ -766,7 +871,17 @@ const WorkflowTab = () => {
                                         )}
                                     </div>
                                     {item.comment && (
-                                        <div className={`mt-1 text-[11px] italic text-gray-500 bg-gray-50 p-2 rounded border-l-2 ${item.status === 'rejected' ? 'border-[#ED5565]' : (item.status === 'reworked' ? 'border-[#F8AC59]' : 'border-[#1AB394]')} max-w-md shadow-sm`}>
+                                        <div className={`mt-1 text-[11px] text-gray-600 bg-gray-50 p-2 rounded border-l-2 ${['rejected', 'failed', 'sage_post_failed', 'post_failed'].includes(item.status) ? 'border-[#ED5565] bg-red-50/40 text-red-700' : (item.status === 'reworked' ? 'border-[#F8AC59]' : 'border-[#1AB394]')} max-w-md shadow-sm`}>
+                                            {item.repostCount > 0 && (
+                                                <div className="mb-1 flex items-center gap-1.5">
+                                                    <span className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                                        Repost Attempt {item.repostCount}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {['failed', 'sage_post_failed', 'post_failed'].includes(item.status) && (
+                                                <span className="font-semibold block mb-0.5 text-red-600">Reason for Failure:</span>
+                                            )}
                                             "{item.comment}"
                                         </div>
                                     )}

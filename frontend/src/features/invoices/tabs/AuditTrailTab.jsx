@@ -62,6 +62,21 @@ const mapActionToUIKey = (action) => {
     return "updated";
 };
 
+const formatDetailLabel = (key) => {
+    if (!key) return "";
+    const lower = key.toLowerCase();
+    if (lower === "error" || lower === "reason" || lower === "failure_reason") {
+        return "Reason for Failure";
+    }
+    if (lower === "repost_attempt" || lower === "attempt") {
+        return "Repost Attempt";
+    }
+    if (lower === "repost_count") {
+        return "Total Reposts";
+    }
+    return key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MEMOIZED SUB-COMPONENT: AuditItem
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,12 +91,23 @@ const AuditItem = memo(({ item, isLast }) => {
         }
         if (!rawDetails || typeof rawDetails !== "object") return [];
 
-        return Object.entries(rawDetails).map(([key, val]) => {
+        const seenFailureValues = new Set();
+        const entries = [];
+
+        for (const [key, val] of Object.entries(rawDetails)) {
             if (val && typeof val === "object" && "old" in val && "new" in val) {
-                return { key, label: key, oldValue: val.old, newValue: val.new };
+                entries.push({ key, label: key, oldValue: val.old, newValue: val.new });
+            } else {
+                const strVal = String(val);
+                const lowerKey = key.toLowerCase();
+                if (lowerKey === "error" || lowerKey === "reason" || lowerKey === "failure_reason") {
+                    if (seenFailureValues.has(strVal)) continue;
+                    seenFailureValues.add(strVal);
+                }
+                entries.push({ key, label: key, value: strVal });
             }
-            return { key, label: key, value: String(val) };
-        });
+        }
+        return entries;
     }, [item.details]);
 
     const formattedTime = useMemo(() => {
@@ -118,10 +144,12 @@ const AuditItem = memo(({ item, isLast }) => {
                 </div>
 
                 {details.length > 0 && (
-                    <div className="mt-2 bg-gray-50 border border-gray-100 rounded-md px-4 py-3 text-[13px] text-gray-600 space-y-2">
+                    <div className={`mt-2 ${uiKey === 'sage_failed' ? 'bg-red-50/40 border-red-200 text-red-950' : 'bg-gray-50 border-gray-100 text-gray-600'} border rounded-md px-4 py-3 text-[13px] space-y-2`}>
                         {details.map((d) => (
                             <div key={d.key} className="flex items-start flex-wrap gap-x-2 gap-y-1">
-                                <span className="font-medium text-gray-500 whitespace-nowrap">{d.label} :</span>
+                                <span className={`font-semibold whitespace-nowrap ${uiKey === 'sage_failed' && (d.key.toLowerCase().includes('reason') || d.key.toLowerCase().includes('error')) ? 'text-red-700' : 'text-gray-500'}`}>
+                                    {formatDetailLabel(d.label)} :
+                                </span>
                                 {d.oldValue !== undefined ? (
                                     <div className="flex items-center flex-wrap gap-1">
                                         <span className="line-through text-gray-300 italic">
@@ -133,7 +161,7 @@ const AuditItem = memo(({ item, isLast }) => {
                                         </span>
                                     </div>
                                 ) : (
-                                    <span className="text-gray-800 font-medium whitespace-pre-wrap">
+                                    <span className={`font-medium whitespace-pre-wrap ${uiKey === 'sage_failed' && (d.key.toLowerCase().includes('reason') || d.key.toLowerCase().includes('error')) ? 'text-red-900 font-semibold' : 'text-gray-800'}`}>
                                         {d.value === "null" ? "None" : d.value}
                                     </span>
                                 )}
@@ -199,13 +227,39 @@ const AuditTrailTab = () => {
             );
         }
 
+        // Chronological count for attempt numbering
+        const chronological = [...getAuditData].reverse();
+        let repostCounter = 0;
+        const attemptMap = new Map();
+
+        for (const log of chronological) {
+            const act = (log.action || "").toLowerCase();
+            if (act.includes("repost")) {
+                repostCounter++;
+                attemptMap.set(log.id || log.timestamp, repostCounter);
+            }
+        }
+
+        const processedList = getAuditData.map(log => {
+            let action = log.action || "";
+            const idKey = log.id || log.timestamp;
+            const attempt = attemptMap.get(idKey);
+            if (attempt && !action.toLowerCase().includes("attempt") && !action.includes("#")) {
+                action = `${action} (Attempt ${attempt})`;
+            }
+            return {
+                ...log,
+                action
+            };
+        });
+
         return (
             <div className="space-y-0">
-                {getAuditData.map((item, index) => (
+                {processedList.map((item, index) => (
                     <AuditItem 
                         key={item.id || index} 
                         item={item} 
-                        isLast={index === getAuditData.length - 1} 
+                        isLast={index === processedList.length - 1} 
                     />
                 ))}
             </div>

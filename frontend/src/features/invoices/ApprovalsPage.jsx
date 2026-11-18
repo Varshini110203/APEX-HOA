@@ -15,6 +15,7 @@ import CustomButton from '../../shared/components/CustomButton';
 import RefreshButton from '../../shared/components/RefreshButton';
 import { useCommonStore } from '../../store/common.store';
 import { formatCurrency, formatIST } from '../../utils/formatters';
+import { getERPSystem } from '../../utils/envHelper';
 import { getInvoiceFilterOptions } from '../../api/invoiceApi';
 import { getWorkflowUsers } from './invoiceColumns';
 
@@ -84,7 +85,7 @@ const ApprovalsPage = () => {
 
             if (inv.status === 'waiting_hoa_approval') {
                 approverLabel = 'HOA Approver';
-            } else if (inv.status === 'waiting_ap_approval') {
+            } else if (inv.status === 'waiting_ap_approval' || inv.status === 'sage_post_failed') {
                 approverLabel = approverLabel !== 'Pending' ? approverLabel : 'AP Approver';
             }
 
@@ -248,11 +249,27 @@ const ApprovalsPage = () => {
             accessor: "status",
             filterable: true,
             onGetOptions: (col, search) => getInvoiceFilterOptions(col, { approvals_view: true }, 'approvals', search),
-            getFilterValue: (row) => row.status_label || "Waiting Approval",
+            getFilterValue: (row) => {
+                const statusLower = (row.status || '').toLowerCase();
+                if (statusLower === 'sage_post_failed' || statusLower.includes('failed')) {
+                    return row.status_label || `${getERPSystem()} Post Failed`;
+                }
+                return row.status_label || "Waiting Approval";
+            },
             render: (val, row) => {
-                const label = row.status_label || (row.current_approver_level ? `Waiting for Approval (Level ${row.current_approver_level})` : 'Waiting for Approval');
+                const statusLower = (row.status || val || '').toLowerCase();
+                const isFailed = statusLower === 'sage_post_failed' || statusLower.includes('failed');
+                const defaultLabel = isFailed
+                    ? `${getERPSystem()} Post Failed`
+                    : (row.current_approver_level ? `Waiting for Approval (Level ${row.current_approver_level})` : 'Waiting for Approval');
+                const label = row.status_label || defaultLabel;
+
+                const badgeClass = isFailed
+                    ? "bg-red-50 text-red-600 px-3 py-1 rounded-full text-[12px] font-medium inline-block border border-red-200"
+                    : "bg-orange-50 text-orange-500 px-3 py-1 rounded-full text-[12px] font-medium inline-block border border-orange-100";
+
                 return (
-                    <div className="bg-orange-50 text-orange-500 px-3 py-1 rounded-full text-[12px] font-medium inline-block border border-orange-100">
+                    <div className={badgeClass}>
                         {label}
                     </div>
                 );

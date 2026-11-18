@@ -1258,11 +1258,11 @@ async def get_invoices(
                         expressions.append(
                             or_(
                                 Invoice.status == InvoiceStatusEnum.WAITING_AP_APPROVAL,
+                                Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED,
                                 and_(
                                     or_(
                                         Invoice.status == InvoiceStatusEnum.WAITING_APPROVAL,
                                         Invoice.status == InvoiceStatusEnum.REWORKED,
-                                        Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED
                                     ),
                                     approver_subquery,
                                     ~is_future_threshold_approver_subquery,
@@ -1275,11 +1275,11 @@ async def get_invoices(
                             or_(
                                 Invoice.status == InvoiceStatusEnum.WAITING_HOA_APPROVAL,
                                 Invoice.status == InvoiceStatusEnum.WAITING_AP_APPROVAL,
+                                Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED,
                                 and_(
                                     or_(
                                         Invoice.status == InvoiceStatusEnum.WAITING_APPROVAL,
                                         Invoice.status == InvoiceStatusEnum.REWORKED,
-                                        Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED
                                     ),
                                     approver_subquery,
                                     ~is_future_threshold_approver_subquery,
@@ -1672,11 +1672,11 @@ async def get_invoice_filter_options(
                         expressions.append(
                             or_(
                                 Invoice.status == InvoiceStatusEnum.WAITING_AP_APPROVAL,
+                                Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED,
                                 and_(
                                     or_(
                                         Invoice.status == InvoiceStatusEnum.WAITING_APPROVAL,
                                         Invoice.status == InvoiceStatusEnum.REWORKED,
-                                        Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED
                                     ),
                                     approver_subquery,
                                     ~is_future_threshold_approver_fo_subquery,
@@ -1689,11 +1689,11 @@ async def get_invoice_filter_options(
                             or_(
                                 Invoice.status == InvoiceStatusEnum.WAITING_HOA_APPROVAL,
                                 Invoice.status == InvoiceStatusEnum.WAITING_AP_APPROVAL,
+                                Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED,
                                 and_(
                                     or_(
                                         Invoice.status == InvoiceStatusEnum.WAITING_APPROVAL,
                                         Invoice.status == InvoiceStatusEnum.REWORKED,
-                                        Invoice.status == InvoiceStatusEnum.SAGE_POST_FAILED
                                     ),
                                     approver_subquery,
                                     ~is_future_threshold_approver_fo_subquery,
@@ -1738,11 +1738,11 @@ async def get_invoice_filter_options(
                 options.add("HOA Approver")
             elif st == "waiting_coding":
                 options.add("AP Coder")
-            elif st == "waiting_ap_approval":
+            elif st in ("waiting_ap_approval", "sage_post_failed"):
                 options.add("AP Approver")
             elif st == "processed":
                 options.add("HOA User")
-            elif st in ("waiting_approval", "reworked", "sage_post_failed"):
+            elif st in ("waiting_approval", "reworked"):
                 level = inv.current_approver_level or 1
                 # Find approvers for this level
                 approvers = [a for a in getattr(inv, "assigned_approvers_list", []) if a.sequence_order == level]
@@ -2997,9 +2997,21 @@ async def update_invoice_status(
                         action=AuditAction.SAGE_POST_FAILED.value,
                         user=current_user.username,
                         entity=invoice.entity,
-                        details={"error": error_msg},
+                        details={"Reason": error_msg, "error": error_msg, "failure_reason": error_msg},
                         sage_bill_number=intended_bill_no
                     )
+
+                    erp_name = settings.TOOL.capitalize()
+                    db.add(WorkflowStep(
+                        invoice_id=invoice_id,
+                        step_name=f"{erp_name} Post Failed",
+                        step_type="post_failed",
+                        user=current_user.username,
+                        status="failed",
+                        comment=error_msg,
+                        timestamp=get_ist_now(),
+                        entity=invoice.entity
+                    ))
             except Exception as bill_err:
                 logger.error(f"[PostAPBill] Error: {bill_err}", exc_info=True)
                 error_logger.error(f"[PostAPBill Critical Error] Invoice {invoice_id} ({invoice.entity}): {str(bill_err)}", exc_info=True)
@@ -3013,9 +3025,20 @@ async def update_invoice_status(
                     action=AuditAction.SAGE_POST_FAILED.value,
                     user=current_user.username,
                     entity=invoice.entity,
-                    details={"error": str(bill_err)},
+                    details={"Reason": str(bill_err), "error": str(bill_err), "failure_reason": str(bill_err)},
                     sage_bill_number=intended_bill_no_exc
                 )
+                erp_name = settings.TOOL.capitalize()
+                db.add(WorkflowStep(
+                    invoice_id=invoice_id,
+                    step_name=f"{erp_name} Post Failed",
+                    step_type="post_failed",
+                    user=current_user.username,
+                    status="failed",
+                    comment=str(bill_err),
+                    timestamp=get_ist_now(),
+                    entity=invoice.entity
+                ))
             
             db.commit()
         finally:
@@ -3114,64 +3137,134 @@ async def repost_to_sage(
             # Persist the bill number on the invoice record
             invoice.sage_bill_number = sage_bill_no
 
+            existing_steps = db.query(WorkflowStep).filter(
+                WorkflowStep.invoice_id == invoice_id,
+                or_(
+                    WorkflowStep.step_name.ilike("%repost%"),
+                    WorkflowStep.step_type.ilike("%repost%")
+                )
+            ).count()
+
+            existing_audits = db.query(AuditLog).filter(
+                AuditLog.invoice_id == invoice_id,
+                AuditLog.action.ilike("%repost%")
+            ).count()
+
+            repost_attempt = max(existing_steps, existing_audits) + 1
+
+            erp_name = settings.TOOL.capitalize()
+
             await audit_service.log_action(
                 db=db,
                 invoice_id=invoice_id,
-                action=AuditAction.SAGE_REPOSTED.value,
+                action=f"{erp_name} Reposted (Attempt {repost_attempt})",
                 user=current_user.username,
                 entity=invoice.entity,
-                details={"sage_response": sage_data},
+                details={"sage_response": sage_data, "repost_attempt": repost_attempt, "repost_count": repost_attempt},
                 sage_bill_number=sage_bill_no
             )
             
-            erp_name = settings.TOOL.capitalize()
             # Create/Update Workflow Step
             db.add(WorkflowStep(
                 invoice_id=invoice_id,
-                step_name=f"Posted to {erp_name}",
+                step_name=f"Reposted to {erp_name} (Attempt {repost_attempt})",
                 step_type=WorkflowStepTypeEnum.SAGE_POSTED,
                 user=current_user.username,
                 status=WorkflowStepStatusEnum.COMPLETED,
+                comment=f"{erp_name} Bill Number: {sage_bill_no} (Repost Attempt {repost_attempt})",
                 timestamp=get_ist_now(),
                 entity=invoice.entity
             ))
             
             db.add(invoice)
             db.commit()
-            return {"success": True, "message": f"Manual repost to {erp_name} successful", "status": invoice.status.value if hasattr(invoice.status, 'value') else invoice.status}
+            return {"success": True, "message": f"Manual repost to {erp_name} successful (Attempt {repost_attempt})", "status": invoice.status.value if hasattr(invoice.status, 'value') else invoice.status}
         else:
             invoice.status = InvoiceStatusEnum.SAGE_POST_FAILED
-            db.commit()
             error_msg = post_result.get("error") if post_result else "Unknown error"
             
             # Log to application_error.log
             error_logger.error(f"[Sage Repost Failure] Invoice {invoice_id} ({invoice.entity}): {error_msg}")
             
+            existing_steps = db.query(WorkflowStep).filter(
+                WorkflowStep.invoice_id == invoice_id,
+                or_(
+                    WorkflowStep.step_name.ilike("%repost%"),
+                    WorkflowStep.step_type.ilike("%repost%")
+                )
+            ).count()
+
+            existing_audits = db.query(AuditLog).filter(
+                AuditLog.invoice_id == invoice_id,
+                AuditLog.action.ilike("%repost%")
+            ).count()
+
+            repost_attempt = max(existing_steps, existing_audits) + 1
+            erp_name = settings.TOOL.capitalize()
+
             await audit_service.log_action(
                 db=db,
                 invoice_id=invoice_id,
-                action=AuditAction.SAGE_REPOST_FAILED.value,
+                action=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
                 user=current_user.username,
                 entity=invoice.entity,
-                details={"error": error_msg},
+                details={"Reason": error_msg, "error": error_msg, "failure_reason": error_msg, "repost_attempt": repost_attempt, "repost_count": repost_attempt},
                 sage_bill_number=intended_bill_no
             )
+            db.add(WorkflowStep(
+                invoice_id=invoice_id,
+                step_name=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
+                step_type="post_failed",
+                user=current_user.username,
+                status="failed",
+                comment=error_msg,
+                timestamp=get_ist_now(),
+                entity=invoice.entity
+            ))
+            db.commit()
             return {"success": False, "error": error_msg, "status": invoice.status.value if hasattr(invoice.status, 'value') else invoice.status}
             
     except Exception as bill_err:
         invoice.status = InvoiceStatusEnum.SAGE_POST_FAILED
-        db.commit()
         logger.error(f"[RepostSage] Critical Error: {bill_err}", exc_info=True)
         error_logger.error(f"[Sage Repost Critical Error] Invoice {invoice_id} ({invoice.entity}): {str(bill_err)}", exc_info=True)
+        
+        existing_steps = db.query(WorkflowStep).filter(
+            WorkflowStep.invoice_id == invoice_id,
+            or_(
+                WorkflowStep.step_name.ilike("%repost%"),
+                WorkflowStep.step_type.ilike("%repost%")
+            )
+        ).count()
+
+        existing_audits = db.query(AuditLog).filter(
+            AuditLog.invoice_id == invoice_id,
+            AuditLog.action.ilike("%repost%")
+        ).count()
+
+        repost_attempt = max(existing_steps, existing_audits) + 1
+        erp_name = settings.TOOL.capitalize()
+
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
-            action=AuditAction.SAGE_POST_FAILED.value,
+            action=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
             user=current_user.username,
             entity=invoice.entity,
-            details={"error": str(bill_err), "type": "manual_repost"},
+            details={"Reason": str(bill_err), "error": str(bill_err), "failure_reason": str(bill_err), "type": "manual_repost", "repost_attempt": repost_attempt, "repost_count": repost_attempt},
             sage_bill_number=f"{invoice.invoice_number}-{invoice.id}"
         )
+        db.add(WorkflowStep(
+            invoice_id=invoice_id,
+            step_name=f"{erp_name} Repost Failed (Attempt {repost_attempt})",
+            step_type="post_failed",
+            user=current_user.username,
+            status="failed",
+            comment=str(bill_err),
+            timestamp=get_ist_now(),
+            entity=invoice.entity
+        ))
+        db.commit()
         return {"success": False, "error": str(bill_err), "status": invoice.status}
     finally:
         if pdf_path:

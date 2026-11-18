@@ -70,7 +70,7 @@ export const getNextApprover = (row) => {
     if (status === 'rejected') return "Rejected";
     if (status === 'waiting_hoa_approval') return "HOA Approver";
     if (status === 'waiting_coding') return "AP Coder";
-    if (status === 'waiting_ap_approval') return "AP Approver";
+    if (status === 'waiting_ap_approval' || status === 'sage_post_failed') return "AP Approver";
     if (status === 'processed') return "HOA User";
 
     const currentLevel = row?.current_approver_level || 1;
