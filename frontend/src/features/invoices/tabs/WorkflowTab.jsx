@@ -14,6 +14,8 @@ const getStatusConfig = (status) => {
     switch (status?.toLowerCase()) {
         case "completed":
         case "sage_posted":
+        case "processed_payment":
+        case "request_closed":
         case "approved":
             return {
                 titleColor: "text-[#1AB394]",
@@ -341,7 +343,7 @@ const WorkflowTab = () => {
     // Has HOA User submitted in this cycle?
     const hasPriorHoaStatus = (activeInvoiceData?.status_history || []).some(h => {
         const s = (h.status || "").toLowerCase();
-        return ["waiting_hoa_approval", "waiting_coding", "waiting_ap_approval", "waiting_approval", "approved", "sage_posted"].includes(s);
+        return ["waiting_hoa_approval", "waiting_coding", "waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "processed_payment", "request_closed"].includes(s);
     });
 
     const hasHoaUserSubmitted = 
@@ -568,14 +570,14 @@ const WorkflowTab = () => {
         // While at waiting_coding (or reworked before AP user submits), AP User has not submitted yet -> In Queue!
         const hasPriorApStatus = (activeInvoiceData?.status_history || []).some(h => {
             const s = (h.status || "").toLowerCase();
-            return ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted"].includes(s);
+            return ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "processed_payment", "request_closed"].includes(s);
         });
 
         const hasApUserSubmitted = 
             Boolean(latestApCode) || 
             Boolean(latestApAudit) || 
             hasPriorApStatus ||
-            ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "sage_post_failed"].includes(currentStatus) || 
+            ["waiting_ap_approval", "waiting_approval", "approved", "sage_posted", "sage_post_failed", "processed_payment", "request_closed"].includes(currentStatus) || 
             (currentStatus === "rejected" && !!apRejectStep);
 
         if (!hasApUserSubmitted) {
@@ -707,7 +709,7 @@ const WorkflowTab = () => {
                     comment: failureReason || "Sage posting failed",
                     repostCount: repostCount
                 });
-            } else if (["approved", "sage_posted"].includes(currentStatus)) {
+            } else if (["approved", "sage_posted", "processed_payment", "request_closed"].includes(currentStatus)) {
                 // Calculate repost count for completed/posted
                 const repostSteps = historySteps.filter(s => {
                     const name = (s.step_name || "").toLowerCase();
@@ -722,7 +724,7 @@ const WorkflowTab = () => {
 
                 const repostSubtitle = repostCount > 0
                     ? `${getUserDisplayName(apApproveStep?.user || "AP Approver")} (Approved & Posted to Sage after ${repostCount} repost${repostCount > 1 ? 's' : ''})`
-                    : getUserDisplayName(apApproveStep?.user || (currentStatus === "sage_posted" ? "Approved & Posted to Sage" : "Jagadhish"));
+                    : getUserDisplayName(apApproveStep?.user || (["sage_posted", "processed_payment", "request_closed"].includes(currentStatus) ? "Approved & Posted to Sage" : "Jagadhish"));
 
                 apSteps.push({
                     title: repostCount > 0 ? `AP Approver - Reposted (Attempt ${repostCount})` : "AP Approver",
@@ -737,29 +739,51 @@ const WorkflowTab = () => {
                 const postSageApStep = historySteps.slice().reverse().find(s => {
                     const name = (s.step_name || "").toLowerCase();
                     const type = (s.step_type || "").toLowerCase();
-                    return type === "ap_user_queue" || name.includes("ap user queue");
+                    return type === "ap_user_queue" || name.includes("ap user queue") || type === "processed_payment" || name.includes("processed payment");
                 });
 
                 const postSageHoaStep = historySteps.slice().reverse().find(s => {
                     const name = (s.step_name || "").toLowerCase();
                     const type = (s.step_type || "").toLowerCase();
-                    return type === "hoa_user_queue" || name.includes("hoa user queue");
+                    return type === "hoa_user_queue" || name.includes("hoa user queue") || type === "request_closed" || name.includes("request closed");
                 });
+
+                // Check audit log for Processed Payment fallback
+                const apProcessedAudit = auditLogsList.slice().reverse().find(a => {
+                    const action = (a.action || "").toLowerCase();
+                    return action.includes("processed payment") || action.includes("processed_payment");
+                });
+
+                const isApStepCompleted = postSageApStep?.status === "completed" || ["processed_payment", "request_closed"].includes(currentStatus) || !!apProcessedAudit;
+                const apUserActor = (postSageApStep?.status === "completed" && postSageApStep?.user) || apProcessedAudit?.user || postSageApStep?.user;
+                const apTimestamp = (postSageApStep?.status === "completed" && postSageApStep?.timestamp) || apProcessedAudit?.timestamp || postSageApStep?.timestamp;
+                const apComment = postSageApStep?.comment || apProcessedAudit?.details?.comment;
 
                 apSteps.push({
                     title: "AP User",
-                    status: postSageApStep?.status || "queued",
-                    subtitle: postSageApStep?.status === "completed" && postSageApStep?.user ? getUserDisplayName(postSageApStep.user) : "In Queue",
-                    time: postSageApStep?.status === "completed" ? formatStepTime(postSageApStep?.timestamp) : null,
-                    comment: postSageApStep?.comment
+                    status: isApStepCompleted ? "completed" : (postSageApStep?.status || "queued"),
+                    subtitle: isApStepCompleted && apUserActor ? getUserDisplayName(apUserActor) : (isApStepCompleted ? "Payment Processed" : "In Queue"),
+                    time: isApStepCompleted && apTimestamp ? formatStepTime(apTimestamp) : null,
+                    comment: apComment
                 });
+
+                // Check audit log for Request Closed fallback
+                const hoaClosedAudit = auditLogsList.slice().reverse().find(a => {
+                    const action = (a.action || "").toLowerCase();
+                    return action.includes("request closed") || action.includes("request_closed");
+                });
+
+                const isHoaStepCompleted = postSageHoaStep?.status === "completed" || currentStatus === "request_closed" || !!hoaClosedAudit;
+                const hoaUserActor = (postSageHoaStep?.status === "completed" && postSageHoaStep?.user) || hoaClosedAudit?.user || postSageHoaStep?.user;
+                const hoaTimestamp = (postSageHoaStep?.status === "completed" && postSageHoaStep?.timestamp) || hoaClosedAudit?.timestamp || postSageHoaStep?.timestamp;
+                const hoaComment = postSageHoaStep?.comment || hoaClosedAudit?.details?.comment;
 
                 apSteps.push({
                     title: "HOA User",
-                    status: postSageHoaStep?.status || "queued",
-                    subtitle: postSageHoaStep?.status === "completed" && postSageHoaStep?.user ? getUserDisplayName(postSageHoaStep.user) : "In Queue",
-                    time: postSageHoaStep?.status === "completed" ? formatStepTime(postSageHoaStep?.timestamp) : null,
-                    comment: postSageHoaStep?.comment
+                    status: isHoaStepCompleted ? "completed" : (postSageHoaStep?.status || "queued"),
+                    subtitle: isHoaStepCompleted && hoaUserActor ? getUserDisplayName(hoaUserActor) : (isHoaStepCompleted ? "Request Closed" : "In Queue"),
+                    time: isHoaStepCompleted && hoaTimestamp ? formatStepTime(hoaTimestamp) : null,
+                    comment: hoaComment
                 });
             } else {
                 apSteps.push({

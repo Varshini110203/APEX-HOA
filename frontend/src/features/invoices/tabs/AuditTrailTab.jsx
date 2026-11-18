@@ -33,6 +33,8 @@ const EVENT_CONFIG = {
     sage_posted: { iconBg: "#10B981", labelBg: "#D1FAE5", labelColor: "#065F46", lineBg: "#14C9B1", icon: <CloudUploadOutlined className="text-[12px] text-white" /> },
     sage_failed: { iconBg: "#EF4444", labelBg: "#FEE2E2", labelColor: "#991B1B", lineBg: "#14C9B1", icon: <ExclamationCircleOutlined className="text-[12px] text-white" /> },
     sage_reposted: { iconBg: "#f379e4ff", labelBg: "#E1F5EE", labelColor: "#0F6E56", lineBg: "#14C9B1", icon: <CloudUploadOutlined className="text-[12px] text-white" /> },
+    processed_payment: { iconBg: "#6366F1", labelBg: "#EEF2FF", labelColor: "#4338CA", lineBg: "#14C9B1", icon: <CheckOutlined className="text-[12px] text-white" /> },
+    request_closed: { iconBg: "#0D9488", labelBg: "#CCFBF1", labelColor: "#115E59", lineBg: "#14C9B1", icon: <CheckOutlined className="text-[12px] text-white" /> },
     deleted: { iconBg: "#EF4444", labelBg: "#FEE2E2", labelColor: "#991B1B", lineBg: "#14C9B1", icon: <CloseOutlined className="text-[12px] text-white" /> }
 };
 
@@ -56,6 +58,8 @@ const mapActionToUIKey = (action) => {
     if (actionLower.includes("reworked")) return "reworked";
     if (actionLower.includes("recalled")) return "recalled";
     if (actionLower.includes("posted")) return "sage_posted";
+    if (actionLower.includes("processed payment") || actionLower.includes("processed_payment")) return "processed_payment";
+    if (actionLower.includes("request closed") || actionLower.includes("request_closed")) return "request_closed";
     if (actionLower.includes("failure") || actionLower.includes("failed")) return "sage_failed";
     if (actionLower.includes("reposted")) return "sage_reposted";
     if (actionLower.includes("deleted")) return "deleted";

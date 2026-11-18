@@ -461,7 +461,7 @@ async def get_workflow_history(
     # config params, because that bypasses the snapshot guard and returns current workflow
     # config values instead of the locked-in approvers.
     invoice_status_str = invoice.status.value if hasattr(invoice.status, "value") else str(invoice.status)
-    snapshot_statuses = {"waiting_approval", "reworked", "sage_post_failed", "approved", "sage_posted", "rejected"}
+    snapshot_statuses = {"waiting_approval", "reworked", "sage_post_failed", "approved", "sage_posted", "processed_payment", "request_closed", "rejected"}
     snapshot_approvers_list = getattr(invoice, "assigned_approvers_list", None) or []
 
     breakdown_data = {}

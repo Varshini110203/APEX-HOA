@@ -172,7 +172,7 @@ const Invoice = () => {
                 const status = (data.status || "").toLowerCase();
                 const role = (useAuthStore.getState().activeRole || useAuthStore.getState().user?.role || currentRole || '').toLowerCase();
                 const isHoaApprover = role.includes("hoa") && role.includes("approver");
-                if (status === "processed" || isHoaApprover) setInvoiceActiveTab("Quick View");
+                if (["processed", "sage_posted", "processed_payment", "request_closed"].includes(status) || isHoaApprover) setInvoiceActiveTab("Quick View");
                 else setInvoiceActiveTab("Coding");
             } finally {
                 setIsPreviewLoading(false);
@@ -468,6 +468,8 @@ const Invoice = () => {
                             {[
                                 { key: "in_progress", label: "In Progress Invoices" },
                                 { key: "posted_stage", label: `Posted To ${getERPSystem()} Invoices` },
+                                { key: "processed_payment", label: "Processed Payment Invoices" },
+                                { key: "request_closed", label: "Request Closed Invoices" },
                                 { key: "delete", label: "Deleted Invoices" },
                                 { key: "archive", label: "Archived Invoices" },
                             ].map(({ key, label }, index, arr) => {
@@ -609,7 +611,7 @@ const Invoice = () => {
                                             </Popconfirm>
                                         )}
 
-                                        {pageTab === 'posted_stage' && (["scanner", "coder"].includes(userRole) || userRole?.includes('user')) && (
+                                        {pageTab === 'request_closed' && (["scanner", "coder"].includes(userRole) || userRole?.includes('user')) && (
                                             <Popconfirm
                                                 title="Archive Invoices"
                                                 description={`Are you sure you want to archive ${selectedInvoiceIds.length} invoices?`}

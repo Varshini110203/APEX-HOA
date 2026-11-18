@@ -956,7 +956,7 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
         }
 
         if (userRole === 'coder' || userRole.includes('user') || userRole.includes('hoa') || userRole.includes('ap')) {
-            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'sage_posted'].includes(status)) return true;
+            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'sage_posted', 'processed_payment', 'request_closed'].includes(status)) return true;
             if (status === 'waiting_coding' || status === 'processed') return false;
             return true;
         }

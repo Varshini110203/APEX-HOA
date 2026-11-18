@@ -307,6 +307,27 @@ class EmailService:
         )
 
     @classmethod
+    def send_payment_processed_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, processed_by: str = "AP User", bill_number: str = None):
+        bill_info = f"<br><span class='highlight'>Bill #:</span> {bill_number}" if bill_number else ""
+        body = f"""
+        Payment has been processed for the following invoice by AP User <span class='highlight'>{processed_by}</span>:
+        <br><br>
+        <span class='highlight'>Vendor:</span> {vendor_name}<br>
+        <span class='highlight'>Invoice #:</span> {invoice_number}<br>
+        <span class='highlight'>Amount:</span> {amount} {currency}{bill_info}<br>
+        <span class='highlight'>Status:</span> Processed Payment
+        <br><br>
+        Please log in to the APEX portal to review and close the request.
+        """
+        return cls.send_email(
+            to_email=email,
+            subject=f"Payment Processed: Invoice {invoice_number} - {vendor_name}",
+            title="Payment Processed Notification",
+            name=username,
+            body=body
+        )
+
+    @classmethod
     def _extract_invoice_meta(cls, invoice):
         """Extract vendor name, invoice number, amount, and currency safely from invoice."""
         import json
@@ -590,6 +611,62 @@ class EmailService:
                 )
         except Exception as e:
             logger.error(f"[EmailService] Error notifying HOA user for approved invoice {invoice_id}: {e}")
+        finally:
+            db.close()
+
+    @classmethod
+    def notify_stage_hoa_user_payment_processed(cls, invoice_id: int, processed_by: str = "AP User"):
+        """Notify HOA user that payment has been processed for the invoice."""
+        from common.database.database import SessionLocal
+        from common.models.db_models import User, Invoice
+
+        db = SessionLocal()
+        try:
+            invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+            if not invoice:
+                return
+
+            vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
+            target_emails = set()
+
+            # Find uploader / HOA user
+            hoa_user_found = False
+            if invoice.uploaded_by:
+                uploader = db.query(User).filter(
+                    (User.username == invoice.uploaded_by) | (User.email == invoice.uploaded_by)
+                ).first()
+                if uploader and uploader.email:
+                    target_emails.add((uploader.email.lower(), uploader.username or "HOA User"))
+                    hoa_user_found = True
+                elif "@" in invoice.uploaded_by:
+                    target_emails.add((invoice.uploaded_by.lower(), invoice.uploaded_by))
+                    hoa_user_found = True
+
+            # If no specific HOA user found, fallback to active HOA Users
+            if not hoa_user_found:
+                active_hoa_users = db.query(User).filter(
+                    User.status == "active",
+                    User.role.isnot(None)
+                ).all()
+                for u in active_hoa_users:
+                    role_str = (u.role or "").lower()
+                    if u.email and "hoa" in role_str and "approver" not in role_str:
+                        target_emails.add((u.email.lower(), u.username or "HOA User"))
+
+            logger.info(f"[EmailService] Sending payment processed notification for invoice {invoice_id} to HOA User ({len(target_emails)} recipients)")
+            for email, username in target_emails:
+                cls.send_payment_processed_notification(
+                    email=email,
+                    username=username,
+                    vendor_name=vendor_name,
+                    invoice_number=invoice_number,
+                    amount=amount,
+                    currency=currency,
+                    processed_by=processed_by,
+                    bill_number=invoice.sage_bill_number
+                )
+        except Exception as e:
+            logger.error(f"[EmailService] Error notifying HOA user for payment processed invoice {invoice_id}: {e}")
         finally:
             db.close()
 

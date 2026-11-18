@@ -22,6 +22,8 @@ const getStatusLabel = (value, level, row = null) => {
         waiting_coding: "Waiting For Coding",
         sage_posted: `Posted to ${erp}`,
         sage_post_failed: `${erp} Post Failed`,
+        processed_payment: "Processed Payment",
+        request_closed: "Request Closed",
         reworked: "Reworked",
         archived: "Archived",
         deleted: "Deleted",
@@ -48,6 +50,8 @@ const StatusBadge = ({ value, level, label }) => {
         waiting_coding: "bg-purple-100 text-purple-700",
         sage_posted: "bg-emerald-100 text-emerald-700",
         sage_post_failed: "bg-red-100 text-red-700",
+        processed_payment: "bg-indigo-100 text-indigo-700",
+        request_closed: "bg-teal-100 text-teal-700",
         reworked: "bg-rose-100 text-rose-700",
         archived: "bg-indigo-100 text-indigo-700",
         deleted: "bg-cyan-100 text-cyan-700",
@@ -66,7 +70,9 @@ const StatusBadge = ({ value, level, label }) => {
 // ─── Next Action By helper ───────────────────────────────────────────────────
 export const getNextApprover = (row) => {
     const status = (row?.status || "").toLowerCase();
-    if (status === 'sage_posted' || status === 'approved') return "Completed";
+    if (status === 'request_closed' || status === 'approved') return "Completed";
+    if (status === 'processed_payment') return "HOA User";
+    if (status === 'sage_posted') return "AP User";
     if (status === 'rejected') return "Rejected";
     if (status === 'waiting_hoa_approval') return "HOA Approver";
     if (status === 'waiting_coding') return "AP Coder";
@@ -125,9 +131,10 @@ const actionsCol = (onView, onDelete, onArchive, userRole, openingInvoiceId, hid
         const allowedRoles = ["scanner", "coder", "admin", "hoa user", "ap user", "ar user"];
         const currentRole = userRole?.toLowerCase();
         const isUserOrScanner = allowedRoles.includes(currentRole) || (currentRole && currentRole.includes('user'));
-        const canDelete = isUserOrScanner && row.status !== 'sage_posted' && !hideDelete;
+        const nonDeletableStatuses = ['sage_posted', 'processed_payment', 'request_closed'];
+        const canDelete = isUserOrScanner && !nonDeletableStatuses.includes(row.status) && !hideDelete;
         const isOpening = openingInvoiceId != null && String(openingInvoiceId) === String(row?.id);
-        const canArchive = isUserOrScanner && row.status === 'sage_posted';
+        const canArchive = isUserOrScanner && row.status === 'request_closed';
 
         return (
             <div className="flex items-center justify-center gap-3">

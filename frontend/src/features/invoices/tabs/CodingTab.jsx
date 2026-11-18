@@ -394,7 +394,7 @@ const CodingTab = ({ isActive = false }) => {
         }
 
         if (userRole === 'coder' || userRole.includes('ap') || userRole.includes('user')) {
-            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'processed', 'sage_posted'].includes(status)) return true;
+            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'processed', 'sage_posted', 'processed_payment', 'request_closed'].includes(status)) return true;
             if (status === 'waiting_coding') return false;
             return true;
         }
@@ -402,7 +402,7 @@ const CodingTab = ({ isActive = false }) => {
         // Approvers always view-only UNLESS editing session active (handled above)
         if (userRole === 'approver' || userRole.includes('approver')) return true;
 
-        const VIEW_ONLY_STATUSES = ["waiting_coding", "processed", "sage_posted"];
+        const VIEW_ONLY_STATUSES = ["waiting_coding", "processed", "sage_posted", "processed_payment", "request_closed"];
         return VIEW_ONLY_STATUSES.includes(status);
     }, [activeInvoiceData, userRole, user?.email]);
 

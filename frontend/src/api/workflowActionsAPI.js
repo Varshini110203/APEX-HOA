@@ -99,6 +99,24 @@ const workflowActionsAPI = {
      */
     recall: (invoiceId, payload = {}) =>
         API.post(`${BASE}/recall/${invoiceId}`, payload).then((res) => res.data),
+
+    /**
+     * POST /workflow/action/process-payment/{invoiceId}
+     * Body: { comment?: string }
+     *
+     * AP User only. Changes status from sage_posted to processed_payment.
+     */
+    processPayment: (invoiceId, payload = {}) =>
+        API.post(`${BASE}/process-payment/${invoiceId}`, payload).then((res) => res.data),
+
+    /**
+     * POST /workflow/action/close-request/{invoiceId}
+     * Body: { comment?: string }
+     *
+     * HOA User only. Changes status from processed_payment to request_closed.
+     */
+    closeRequest: (invoiceId, payload = {}) =>
+        API.post(`${BASE}/close-request/${invoiceId}`, payload).then((res) => res.data),
 };
 
 export default workflowActionsAPI;

@@ -125,9 +125,11 @@ def summary(
         elif status == InvoiceStatusEnum.SAGE_POSTED.value:
             sage_posted_count += 1
             
-        # Total Overdue excludes Sage Posted, Archived, and Deleted
+        # Total Overdue excludes Sage Posted, Processed Payment, Request Closed, Archived, and Deleted
         if status in [InvoiceStatusEnum.DELETED.value, 
                      InvoiceStatusEnum.SAGE_POSTED.value, 
+                     InvoiceStatusEnum.PROCESSED_PAYMENT.value,
+                     InvoiceStatusEnum.REQUEST_CLOSED.value,
                      InvoiceStatusEnum.ARCHIVED.value]:
             continue
             

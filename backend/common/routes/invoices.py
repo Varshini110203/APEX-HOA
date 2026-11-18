@@ -1092,12 +1092,18 @@ async def get_invoices(
     # Apply Tab-based filtering
     if tab == "posted_stage":
         expressions.append(Invoice.status == InvoiceStatusEnum.SAGE_POSTED)
+    elif tab == "processed_payment":
+        expressions.append(Invoice.status == InvoiceStatusEnum.PROCESSED_PAYMENT)
+    elif tab == "request_closed":
+        expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
     elif tab == "in_progress" or not tab:
-        # Default view: Exclude Posted and Archived
+        # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
         expressions.append(and_(
             Invoice.status != InvoiceStatusEnum.SAGE_POSTED,
+            Invoice.status != InvoiceStatusEnum.PROCESSED_PAYMENT,
+            Invoice.status != InvoiceStatusEnum.REQUEST_CLOSED,
             Invoice.status != InvoiceStatusEnum.ARCHIVED,
             Invoice.status != InvoiceStatusEnum.UPLOADING
         ))
@@ -1483,12 +1489,18 @@ async def get_invoice_filter_options(
     # Apply Tab-based filtering (same logic as get_invoices)
     if tab == "posted_stage":
         expressions.append(Invoice.status == InvoiceStatusEnum.SAGE_POSTED)
+    elif tab == "processed_payment":
+        expressions.append(Invoice.status == InvoiceStatusEnum.PROCESSED_PAYMENT)
+    elif tab == "request_closed":
+        expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
     elif tab == "in_progress" or not tab:
-        # Default view: Exclude Posted and Archived
+        # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
         expressions.append(and_(
             Invoice.status != InvoiceStatusEnum.SAGE_POSTED,
+            Invoice.status != InvoiceStatusEnum.PROCESSED_PAYMENT,
+            Invoice.status != InvoiceStatusEnum.REQUEST_CLOSED,
             Invoice.status != InvoiceStatusEnum.ARCHIVED
         ))
     
@@ -1730,7 +1742,11 @@ async def get_invoice_filter_options(
         for inv in invoices:
             status_val = inv.status.value if hasattr(inv.status, 'value') else str(inv.status or "")
             st = status_val.lower()
-            if st in ("sage_posted", "approved"):
+            if st == "sage_posted":
+                options.add("AP User")
+            elif st == "processed_payment":
+                options.add("HOA User")
+            elif st in ("request_closed", "approved"):
                 options.add("Completed")
             elif st == "rejected":
                 options.add("Rejected")
@@ -2137,7 +2153,7 @@ async def get_deleted_invoice(
         extracted_data["lineItemsSnapshot"] = line_items_list
     
     # Enrich extracted_data with metadata for specific UI views
-    if record.status in ['waiting_approval', 'approved', 'processed', 'sage_posted', 'rejected', 'reworked']:
+    if record.status in ['waiting_approval', 'approved', 'processed', 'sage_posted', 'processed_payment', 'request_closed', 'rejected', 'reworked']:
         if line_items_list:
             extracted_data["is_coded"] = True
 
@@ -4401,10 +4417,10 @@ async def archive_invoice(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    if invoice.status != InvoiceStatusEnum.SAGE_POSTED:
+    if invoice.status != InvoiceStatusEnum.REQUEST_CLOSED:
         raise HTTPException(
             status_code=400, 
-            detail="Only invoices with 'Posted To Stage' status can be archived."
+            detail="Only invoices with 'Request Closed' status can be archived."
         )
 
     try:
@@ -4634,8 +4650,8 @@ async def bulk_archive_invoices(
                 results["failed"].append({"id": inv_id, "reason": "Invoice not found"})
                 continue
 
-            if invoice.status != InvoiceStatusEnum.SAGE_POSTED:
-                results["failed"].append({"id": inv_id, "reason": "Only invoices with 'Posted To Stage' status can be archived."})
+            if invoice.status != InvoiceStatusEnum.REQUEST_CLOSED:
+                results["failed"].append({"id": inv_id, "reason": "Only invoices with 'Request Closed' status can be archived."})
                 continue
 
             # Move file to archive_files

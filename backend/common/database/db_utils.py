@@ -32,6 +32,8 @@ def get_status_label(invoice: Invoice, db: Session = None) -> str:
             "waiting_ap_approval": "Waiting AP Approval",
             "sage_posted": f"Posted to {erp_name}",
             "sage_post_failed": f"{erp_name} Post Failed",
+            "processed_payment": "Processed Payment",
+            "request_closed": "Request Closed",
             "reworked": "Reworked",
             "archived": "Archived",
         }

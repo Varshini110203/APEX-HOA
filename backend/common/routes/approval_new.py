@@ -30,7 +30,7 @@ from common.config.settings import settings
 from common.auth.jwt import get_current_user
 from common.database.database import get_db
 from common.dependencies import get_current_entity
-from common.models.db_models import Invoice, User, WorkflowStep, EntityMaster, InvoiceApprovedBy, InvoiceAssignedApprover, AuditLog
+from common.models.db_models import Invoice, User, WorkflowStep, EntityMaster, InvoiceApprovedBy, InvoiceAssignedApprover, AuditLog, InvoiceStatusHistory
 from common.models.user import UserResponse
 from common.repository.repositories import (
     coding_repo,
@@ -64,6 +64,8 @@ class InvoiceStatus:
     REWORKED = "reworked"
     SAGE_POSTED = "sage_posted"
     SAGE_POST_FAILED = "sage_post_failed"
+    PROCESSED_PAYMENT = "processed_payment"
+    REQUEST_CLOSED = "request_closed"
     ARCHIVED = "archived"
 
 
@@ -80,6 +82,8 @@ class StepType:
     THRESHOLD_APPROVED = "threshold_approved"
     POSTING_APPROVED = "posting_approved"
     RECALLED = "recalled"
+    PROCESSED_PAYMENT = "processed_payment"
+    REQUEST_CLOSED = "request_closed"
 
 
 # ─────────────────────────────────────────────
@@ -3074,4 +3078,204 @@ async def recall_invoice(
         success=True,
         message="Invoice successfully recalled to coding stage.",
         new_status=InvoiceStatus.WAITING_CODING
+    )
+
+
+@router.post("/process-payment/{invoice_id}", response_model=ActionResponse)
+async def process_payment(
+    invoice_id: int,
+    payload: ActionRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+    entity: str = Depends(get_current_entity),
+):
+    invoice = invoice_repo.get(db, invoice_id)
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+
+    _check_concurrency(db, invoice, payload.last_updated_at, current_user)
+
+    current_status = (
+        invoice.status.value
+        if hasattr(invoice.status, "value")
+        else str(invoice.status)
+    )
+
+    if current_status != InvoiceStatus.SAGE_POSTED:
+        raise HTTPException(400, f"Invoice cannot be marked as processed payment from status '{current_status}'. Must be '{InvoiceStatus.SAGE_POSTED}'")
+
+    user_role_lower = (current_user.role or "").lower()
+    is_admin = user_role_lower == "admin"
+    is_ap_user = ("ap" in user_role_lower or "coder" in user_role_lower) and "hoa" not in user_role_lower and "approver" not in user_role_lower
+
+    if not (is_admin or is_ap_user):
+        raise HTTPException(403, "Only AP Users are authorized to process payment")
+
+    email = current_user.email.lower()
+    comment = payload.comment or "Payment Processed"
+    actor_name = current_user.username or (email.split("@")[0] if "@" in email else email)
+
+    # Update invoice status
+    _update_invoice_status(db, invoice, InvoiceStatus.PROCESSED_PAYMENT)
+
+    # Complete AP User Queue step
+    ap_queue_step = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_type == "ap_user_queue",
+            WorkflowStep.step_name.ilike("%ap user queue%")
+        ),
+        WorkflowStep.status == "queued"
+    ).order_by(WorkflowStep.id.desc()).first()
+
+    if ap_queue_step:
+        ap_queue_step.status = "completed"
+        ap_queue_step.user = actor_name
+        ap_queue_step.timestamp = get_ist_now()
+        ap_queue_step.comment = comment
+        db.add(ap_queue_step)
+    else:
+        _record_step(
+            db, invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_queue",
+            user_email=email,
+            status="completed",
+            comment=comment,
+            entity=entity
+        )
+
+    # Log to audit trail
+    await audit_service.log_action(
+        db=db,
+        invoice_id=invoice_id,
+        action=AuditAction.PROCESSED_PAYMENT.value,
+        user=actor_name,
+        entity=entity,
+        details={"comment": comment}
+    )
+
+    # Add to status history
+    db.add(InvoiceStatusHistory(
+        invoice_id=invoice_id,
+        status=InvoiceStatus.PROCESSED_PAYMENT,
+        user=actor_name,
+        timestamp=get_ist_now(),
+        comment=comment
+    ))
+
+    db.commit()
+
+    # Trigger notification email to HOA User
+    if background_tasks:
+        background_tasks.add_task(
+            email_service.notify_stage_hoa_user_payment_processed,
+            invoice_id=invoice_id,
+            processed_by=actor_name
+        )
+    else:
+        email_service.notify_stage_hoa_user_payment_processed(
+            invoice_id=invoice_id,
+            processed_by=actor_name
+        )
+
+    logger.info(f"[ProcessPayment] Invoice {invoice_id} marked as processed payment by {actor_name}")
+    return ActionResponse(
+        success=True,
+        message="Payment processed successfully. Notification sent to HOA User.",
+        new_status=InvoiceStatus.PROCESSED_PAYMENT
+    )
+
+
+@router.post("/close-request/{invoice_id}", response_model=ActionResponse)
+async def close_request(
+    invoice_id: int,
+    payload: ActionRequest,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+    entity: str = Depends(get_current_entity),
+):
+    invoice = invoice_repo.get(db, invoice_id)
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+
+    _check_concurrency(db, invoice, payload.last_updated_at, current_user)
+
+    current_status = (
+        invoice.status.value
+        if hasattr(invoice.status, "value")
+        else str(invoice.status)
+    )
+
+    if current_status != InvoiceStatus.PROCESSED_PAYMENT:
+        raise HTTPException(400, f"Invoice cannot be closed from status '{current_status}'. Must be '{InvoiceStatus.PROCESSED_PAYMENT}'")
+
+    user_role_lower = (current_user.role or "").lower()
+    is_admin = user_role_lower == "admin"
+    is_hoa_user = "hoa" in user_role_lower and "approver" not in user_role_lower
+
+    if not (is_admin or is_hoa_user):
+        raise HTTPException(403, "Only HOA Users are authorized to close the request")
+
+    email = current_user.email.lower()
+    comment = payload.comment or "Request Closed"
+    actor_name = current_user.username or (email.split("@")[0] if "@" in email else email)
+
+    # Update invoice status
+    _update_invoice_status(db, invoice, InvoiceStatus.REQUEST_CLOSED)
+
+    # Complete HOA User Queue step
+    hoa_queue_step = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_type == "hoa_user_queue",
+            WorkflowStep.step_name.ilike("%hoa user queue%")
+        ),
+        WorkflowStep.status == "queued"
+    ).order_by(WorkflowStep.id.desc()).first()
+
+    if hoa_queue_step:
+        hoa_queue_step.status = "completed"
+        hoa_queue_step.user = actor_name
+        hoa_queue_step.timestamp = get_ist_now()
+        hoa_queue_step.comment = comment
+        db.add(hoa_queue_step)
+    else:
+        _record_step(
+            db, invoice_id,
+            step_name="HOA User Queue",
+            step_type="hoa_user_queue",
+            user_email=email,
+            status="completed",
+            comment=comment,
+            entity=entity
+        )
+
+    # Log to audit trail
+    await audit_service.log_action(
+        db=db,
+        invoice_id=invoice_id,
+        action=AuditAction.REQUEST_CLOSED.value,
+        user=actor_name,
+        entity=entity,
+        details={"comment": comment}
+    )
+
+    # Add to status history
+    db.add(InvoiceStatusHistory(
+        invoice_id=invoice_id,
+        status=InvoiceStatus.REQUEST_CLOSED,
+        user=actor_name,
+        timestamp=get_ist_now(),
+        comment=comment
+    ))
+
+    db.commit()
+
+    logger.info(f"[CloseRequest] Invoice {invoice_id} request closed by {actor_name}")
+    return ActionResponse(
+        success=True,
+        message="Request closed successfully.",
+        new_status=InvoiceStatus.REQUEST_CLOSED
     )
