@@ -2425,6 +2425,7 @@ async def update_invoice_status(
     invoice_id: int,
     status: InvoiceStatusEnum,
     comment: str = None,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -2977,6 +2978,40 @@ async def update_invoice_status(
                         timestamp=get_ist_now(),
                         entity=invoice.entity
                     ))
+                    # Add queue for AP User and HOA User after successful post to Sage
+                    db.add(WorkflowStep(
+                        invoice_id=invoice_id,
+                        step_name="AP User Queue",
+                        step_type="ap_user_queue",
+                        user=current_user.username,
+                        status="queued",
+                        timestamp=get_ist_now(),
+                        entity=invoice.entity
+                    ))
+                    db.add(WorkflowStep(
+                        invoice_id=invoice_id,
+                        step_name="HOA User Queue",
+                        step_type="hoa_user_queue",
+                        user=current_user.username,
+                        status="queued",
+                        timestamp=get_ist_now(),
+                        entity=invoice.entity
+                    ))
+
+                    # Trigger notification email to AP User & HOA User
+                    if background_tasks:
+                        background_tasks.add_task(
+                            email_service.notify_stage_invoice_approved,
+                            invoice_id=invoice_id,
+                            approved_by=current_user.username or "AP Approver",
+                            bill_number=sage_bill_no
+                        )
+                    else:
+                        email_service.notify_stage_invoice_approved(
+                            invoice_id=invoice_id,
+                            approved_by=current_user.username or "AP Approver",
+                            bill_number=sage_bill_no
+                        )
                     
                     # Move file to posted_stage_files
                     new_path = move_invoice_file(invoice.file_path, "posted_stage")
@@ -3057,6 +3092,7 @@ async def update_invoice_status(
 @router.post("/{invoice_id}/repost-sage")
 async def repost_to_sage(
     invoice_id: int,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: UserResponse = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -3175,9 +3211,43 @@ async def repost_to_sage(
                 timestamp=get_ist_now(),
                 entity=invoice.entity
             ))
+            # Add queue for AP User and HOA User after successful post to Sage
+            db.add(WorkflowStep(
+                invoice_id=invoice_id,
+                step_name="AP User Queue",
+                step_type="ap_user_queue",
+                user=current_user.username,
+                status="queued",
+                timestamp=get_ist_now(),
+                entity=invoice.entity
+            ))
+            db.add(WorkflowStep(
+                invoice_id=invoice_id,
+                step_name="HOA User Queue",
+                step_type="hoa_user_queue",
+                user=current_user.username,
+                status="queued",
+                timestamp=get_ist_now(),
+                entity=invoice.entity
+            ))
             
             db.add(invoice)
             db.commit()
+
+            # Trigger notification email to AP User & HOA User
+            if background_tasks:
+                background_tasks.add_task(
+                    email_service.notify_stage_invoice_approved,
+                    invoice_id=invoice_id,
+                    approved_by=current_user.username or "AP Approver",
+                    bill_number=sage_bill_no
+                )
+            else:
+                email_service.notify_stage_invoice_approved(
+                    invoice_id=invoice_id,
+                    approved_by=current_user.username or "AP Approver",
+                    bill_number=sage_bill_no
+                )
             return {"success": True, "message": f"Manual repost to {erp_name} successful (Attempt {repost_attempt})", "status": invoice.status.value if hasattr(invoice.status, 'value') else invoice.status}
         else:
             invoice.status = InvoiceStatusEnum.SAGE_POST_FAILED

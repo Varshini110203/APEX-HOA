@@ -285,21 +285,23 @@ class EmailService:
 
     @classmethod
     def send_invoice_approved_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, approved_by: str = "AP Approver", bill_number: str = None):
-        bill_info = f"<br><span class='highlight'>ERP Bill #:</span> {bill_number}" if bill_number else ""
+        from common.config.settings import settings
+        erp_name = settings.TOOL.capitalize()
+        bill_info = f"<br><span class='highlight'>{erp_name} Bill #:</span> {bill_number}" if bill_number else ""
         body = f"""
-        The following invoice has been approved by AP Approver <span class='highlight'>{approved_by}</span>:
+        The following invoice has been approved by AP Approver <span class='highlight'>{approved_by}</span> and posted to {erp_name}:
         <br><br>
         <span class='highlight'>Vendor:</span> {vendor_name}<br>
         <span class='highlight'>Invoice #:</span> {invoice_number}<br>
         <span class='highlight'>Amount:</span> {amount} {currency}{bill_info}<br>
-        <span class='highlight'>Status:</span> Approved
+        <span class='highlight'>Status:</span> Approved & Posted to {erp_name}
         <br><br>
         No further action is required.
         """
         return cls.send_email(
             to_email=email,
-            subject=f"Invoice {invoice_number} from {vendor_name} Approved",
-            title="Invoice Approved",
+            subject=f"Invoice {invoice_number} from {vendor_name} Approved & Posted to {erp_name}",
+            title=f"Invoice Approved & Posted to {erp_name}",
             name=username,
             body=body
         )
@@ -470,7 +472,7 @@ class EmailService:
 
     @classmethod
     def notify_stage_invoice_approved(cls, invoice_id: int, approved_by: str = "AP Approver", bill_number: str = None):
-        """Notify HOA user (uploader) and AP user (coder) that invoice has been approved."""
+        """Notify AP user (first mail sent to AP user only) that invoice has been approved and posted to ERP."""
         from common.database.database import SessionLocal
         from common.models.db_models import User, Invoice, WorkflowStep, WorkflowStepTypeEnum
 
@@ -483,29 +485,42 @@ class EmailService:
             vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
             target_emails = set()
 
-            # Find uploader / HOA user
-            if invoice.uploaded_by:
-                uploader = db.query(User).filter(
-                    (User.username == invoice.uploaded_by) | (User.email == invoice.uploaded_by)
-                ).first()
-                if uploader and uploader.email:
-                    target_emails.add((uploader.email.lower(), uploader.username))
-                elif "@" in invoice.uploaded_by:
-                    target_emails.add((invoice.uploaded_by.lower(), invoice.uploaded_by))
-
-            # Find coder / AP user
+            # Find coder / AP user (first mail sent to AP user only)
+            ap_user_found = False
             coding_step = db.query(WorkflowStep).filter(
                 WorkflowStep.invoice_id == invoice_id,
-                WorkflowStep.step_type.in_([WorkflowStepTypeEnum.CODING, "coding"])
+                WorkflowStep.step_type.in_([WorkflowStepTypeEnum.CODING, "coding", WorkflowStepTypeEnum.AP_CODED, "ap_coded"])
             ).order_by(WorkflowStep.timestamp.desc()).first()
+
+            if not coding_step:
+                coding_step = db.query(WorkflowStep).filter(
+                    WorkflowStep.invoice_id == invoice_id,
+                    WorkflowStep.step_name.ilike("%coded%")
+                ).order_by(WorkflowStep.timestamp.desc()).first()
+
             if coding_step and coding_step.user:
                 coder = db.query(User).filter(
                     (User.username == coding_step.user) | (User.email == coding_step.user)
                 ).first()
                 if coder and coder.email:
-                    target_emails.add((coder.email.lower(), coder.username))
+                    target_emails.add((coder.email.lower(), coder.username or "AP User"))
+                    ap_user_found = True
+                elif "@" in coding_step.user:
+                    target_emails.add((coding_step.user.lower(), coding_step.user))
+                    ap_user_found = True
 
-            logger.info(f"[EmailService] Sending invoice approved notification for invoice {invoice_id} to {len(target_emails)} recipients")
+            # If no specific AP user found, fallback to active AP Users
+            if not ap_user_found:
+                active_ap_users = db.query(User).filter(
+                    User.status == "active",
+                    User.role.isnot(None)
+                ).all()
+                for u in active_ap_users:
+                    role_str = (u.role or "").lower()
+                    if u.email and (("ap" in role_str and "approver" not in role_str) or "coder" in role_str):
+                        target_emails.add((u.email.lower(), u.username or "AP User"))
+
+            logger.info(f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to {len(target_emails)} recipients (AP User only)")
             for email, username in target_emails:
                 cls.send_invoice_approved_notification(
                     email=email,
@@ -518,7 +533,63 @@ class EmailService:
                     bill_number=bill_number
                 )
         except Exception as e:
-            logger.error(f"[EmailService] Error notifying approved invoice {invoice_id}: {e}")
+            logger.error(f"[EmailService] Error notifying AP user for approved invoice {invoice_id}: {e}")
+        finally:
+            db.close()
+
+    @classmethod
+    def notify_stage_hoa_user_post_sage(cls, invoice_id: int, approved_by: str = "AP Approver", bill_number: str = None):
+        """Notify HOA user that invoice has been approved and posted to ERP."""
+        from common.database.database import SessionLocal
+        from common.models.db_models import User, Invoice
+
+        db = SessionLocal()
+        try:
+            invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+            if not invoice:
+                return
+
+            vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
+            target_emails = set()
+
+            # Find uploader / HOA user
+            hoa_user_found = False
+            if invoice.uploaded_by:
+                uploader = db.query(User).filter(
+                    (User.username == invoice.uploaded_by) | (User.email == invoice.uploaded_by)
+                ).first()
+                if uploader and uploader.email:
+                    target_emails.add((uploader.email.lower(), uploader.username or "HOA User"))
+                    hoa_user_found = True
+                elif "@" in invoice.uploaded_by:
+                    target_emails.add((invoice.uploaded_by.lower(), invoice.uploaded_by))
+                    hoa_user_found = True
+
+            # If no specific HOA user found, fallback to active HOA Users
+            if not hoa_user_found:
+                active_hoa_users = db.query(User).filter(
+                    User.status == "active",
+                    User.role.isnot(None)
+                ).all()
+                for u in active_hoa_users:
+                    role_str = (u.role or "").lower()
+                    if u.email and "hoa" in role_str and "approver" not in role_str:
+                        target_emails.add((u.email.lower(), u.username or "HOA User"))
+
+            logger.info(f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to HOA User ({len(target_emails)} recipients)")
+            for email, username in target_emails:
+                cls.send_invoice_approved_notification(
+                    email=email,
+                    username=username,
+                    vendor_name=vendor_name,
+                    invoice_number=invoice_number,
+                    amount=amount,
+                    currency=currency,
+                    approved_by=approved_by,
+                    bill_number=bill_number
+                )
+        except Exception as e:
+            logger.error(f"[EmailService] Error notifying HOA user for approved invoice {invoice_id}: {e}")
         finally:
             db.close()
 

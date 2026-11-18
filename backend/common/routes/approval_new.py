@@ -588,7 +588,17 @@ def _level_is_complete(
     return True
 
 
-async def _finalize_and_post(db: Session, invoice: Invoice, current_user: UserResponse, email: str, entity: str, comment: str, step_name: str = "Invoice Approved", step_type: str = StepType.APPROVED):
+async def _finalize_and_post(
+    db: Session,
+    invoice: Invoice,
+    current_user: UserResponse,
+    email: str,
+    entity: str,
+    comment: str,
+    step_name: str = "Invoice Approved",
+    step_type: str = StepType.APPROVED,
+    background_tasks: Optional[BackgroundTasks] = None
+):
     """
     Sets status to APPROVED, records approval steps, and triggers Sage posting.
     """
@@ -658,6 +668,23 @@ async def _finalize_and_post(db: Session, invoice: Invoice, current_user: UserRe
             comment=f"{erp_name} Bill Number: {actual_bill_no}",
             entity=entity,
         )
+        # Add queue for AP User and HOA User after successful post to Sage
+        _record_step(
+            db, invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
+        _record_step(
+            db, invoice_id,
+            step_name="HOA User Queue",
+            step_type="hoa_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
         await audit_service.log_action(
             db=db,
             invoice_id=invoice_id,
@@ -668,6 +695,22 @@ async def _finalize_and_post(db: Session, invoice: Invoice, current_user: UserRe
             sage_bill_number=actual_bill_no
         )
         db.commit()
+
+        # Trigger notification email to AP User & HOA User
+        if background_tasks:
+            background_tasks.add_task(
+                email_service.notify_stage_invoice_approved,
+                invoice_id=invoice_id,
+                approved_by=current_user.username or "Posting Approver",
+                bill_number=actual_bill_no
+            )
+        else:
+            email_service.notify_stage_invoice_approved(
+                invoice_id=invoice_id,
+                approved_by=current_user.username or "Posting Approver",
+                bill_number=actual_bill_no
+            )
+
         logger.info(f"[{erp_name}Post] Successfully posted invoice {invoice_id} to {erp_name} (Bill Number: {actual_bill_no})")
         return ActionResponse(
             success=True,
@@ -1620,6 +1663,23 @@ async def approve_invoice(
                 comment=f"{erp_name} Bill Number: {sage_result.get('sage_bill_number')}",
                 entity=entity,
             )
+            # Add queue for AP User and HOA User after successful post to Sage
+            _record_step(
+                db, invoice_id,
+                step_name="AP User Queue",
+                step_type="ap_user_queue",
+                user_email=email,
+                status="queued",
+                entity=entity,
+            )
+            _record_step(
+                db, invoice_id,
+                step_name="HOA User Queue",
+                step_type="hoa_user_queue",
+                user_email=email,
+                status="queued",
+                entity=entity,
+            )
             db.commit()
 
             # --- TRIGGER NOTIFICATION: INVOICE APPROVED & POSTED ---
@@ -2034,7 +2094,33 @@ async def approve_invoice(
                     comment=f"{erp_name} Bill Number: {sage_result.get('sage_bill_number')}",
                     entity=entity,
                 )
+                # Add queue for AP User and HOA User after successful post to Sage
+                _record_step(
+                    db, invoice_id,
+                    step_name="AP User Queue",
+                    step_type="ap_user_queue",
+                    user_email=email,
+                    status="queued",
+                    entity=entity,
+                )
+                _record_step(
+                    db, invoice_id,
+                    step_name="HOA User Queue",
+                    step_type="hoa_user_queue",
+                    user_email=email,
+                    status="queued",
+                    entity=entity,
+                )
                 db.commit()
+
+                # Trigger notification email to AP User & HOA User
+                background_tasks.add_task(
+                    email_service.notify_stage_invoice_approved,
+                    invoice_id=invoice_id,
+                    approved_by=current_user.username or "Threshold Approver",
+                    bill_number=sage_result.get("sage_bill_number")
+                )
+
                 logger.info(f"[Workflow] Invoice {invoice_id} fully approved after THRESHOLD by {current_user.username}. Posted to {erp_name} (Bill: {sage_result.get('sage_bill_number')}).")
                 return ActionResponse(
                     success=True,
@@ -2092,7 +2178,8 @@ async def approve_invoice(
         return await _finalize_and_post(
             db, invoice, current_user, email, entity, payload.comment,
             step_name="Posting Approver Approved",
-            step_type=StepType.POSTING_APPROVED
+            step_type=StepType.POSTING_APPROVED,
+            background_tasks=background_tasks
         )
 
         # Record approver email in invoice.approved_by_list
@@ -2733,6 +2820,7 @@ async def enable_editing(
 async def repost_to_sage(
     invoice_id: int,
     payload: ActionRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     current_user: UserResponse = Depends(get_current_user),
     entity: str = Depends(get_current_entity),
@@ -2838,7 +2926,41 @@ async def repost_to_sage(
             },
             sage_bill_number=resolved_bill_number
         )
+        # Add queue for AP User and HOA User after successful post to Sage
+        _record_step(
+            db,
+            invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
+        _record_step(
+            db,
+            invoice_id,
+            step_name="HOA User Queue",
+            step_type="hoa_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
         db.commit()
+
+        # Trigger notification email to AP User & HOA User
+        if background_tasks:
+            background_tasks.add_task(
+                email_service.notify_stage_invoice_approved,
+                invoice_id=invoice_id,
+                approved_by=current_user.username or "AP Approver",
+                bill_number=resolved_bill_number
+            )
+        else:
+            email_service.notify_stage_invoice_approved(
+                invoice_id=invoice_id,
+                approved_by=current_user.username or "AP Approver",
+                bill_number=resolved_bill_number
+            )
         # Always return the resolved bill number to the frontend — never None
         final_sage_result = dict(sage_result)
         final_sage_result["sage_bill_number"] = resolved_bill_number

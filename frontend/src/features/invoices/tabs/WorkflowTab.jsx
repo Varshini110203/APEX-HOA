@@ -736,6 +736,35 @@ const WorkflowTab = () => {
                     comment: apApproveStep?.comment,
                     repostCount: repostCount
                 });
+
+                // Post-Sage Queue: AP USER and HOA USER
+                const postSageApStep = historySteps.slice().reverse().find(s => {
+                    const name = (s.step_name || "").toLowerCase();
+                    const type = (s.step_type || "").toLowerCase();
+                    return type === "ap_user_queue" || name.includes("ap user queue");
+                });
+
+                const postSageHoaStep = historySteps.slice().reverse().find(s => {
+                    const name = (s.step_name || "").toLowerCase();
+                    const type = (s.step_type || "").toLowerCase();
+                    return type === "hoa_user_queue" || name.includes("hoa user queue");
+                });
+
+                apSteps.push({
+                    title: "AP User",
+                    status: postSageApStep?.status || "queued",
+                    subtitle: postSageApStep?.status === "completed" && postSageApStep?.user ? getUserDisplayName(postSageApStep.user) : "In Queue",
+                    time: postSageApStep?.status === "completed" ? formatStepTime(postSageApStep?.timestamp) : null,
+                    comment: postSageApStep?.comment
+                });
+
+                apSteps.push({
+                    title: "HOA User",
+                    status: postSageHoaStep?.status || "queued",
+                    subtitle: postSageHoaStep?.status === "completed" && postSageHoaStep?.user ? getUserDisplayName(postSageHoaStep.user) : "In Queue",
+                    time: postSageHoaStep?.status === "completed" ? formatStepTime(postSageHoaStep?.timestamp) : null,
+                    comment: postSageHoaStep?.comment
+                });
             } else {
                 apSteps.push({
                     title: "AP Approver",
