@@ -167,10 +167,6 @@ const WorkflowTab = () => {
         };
     }, [liveWorkflowData?.user_names, activeInvoiceData?.user_names]);
 
-    if (isLoadingWorkflowData) {
-        return <div className="p-10 text-gray-400 font-normal">Loading workflow stages...</div>;
-    }
-
     const currentStatus = (
         liveWorkflowData?.current_status ||
         activeInvoiceData?.status ||
@@ -856,6 +852,10 @@ const WorkflowTab = () => {
             deletedStep
         ];
     }, [step1, hoaSteps, apSteps, isDeleted, deletedStep]);
+
+    if (isLoadingWorkflowData) {
+        return <div className="p-10 text-gray-400 font-normal">Loading workflow stages...</div>;
+    }
 
     return (
         <div className="bg-white p-10 font-sans relative">
