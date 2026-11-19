@@ -36,9 +36,28 @@ const SelectEntityPage = () => {
       try {
         const { masterDataService } = await import('../../api/masterdataAPI');
         const response = await masterDataService.getEntityMasterData({ page: 1, page_size: 1000 });
-        setEntityData(response.data || []);
+        const list = response.data || [];
+        setEntityData(list);
+        if (list.length === 0) {
+          const isZoho = getERPSystem() === 'Zoho';
+          const defaultName = isZoho ? 'Top Level' : 'Top Level';
+          setSelectedEntity(`DEFAULT - ${defaultName}`);
+          setSelectedEntityObj({
+            entityId: 'DEFAULT',
+            name: defaultName,
+            displayName: `DEFAULT - ${defaultName}`
+          });
+        }
       } catch (err) {
         console.error("Failed to load entities:", err);
+        const isZoho = getERPSystem() === 'Zoho';
+        const defaultName = isZoho ? 'Top Level' : 'Top Level';
+        setSelectedEntity(`DEFAULT - ${defaultName}`);
+        setSelectedEntityObj({
+          entityId: 'DEFAULT',
+          name: defaultName,
+          displayName: `DEFAULT - ${defaultName}`
+        });
       }
     };
     fetchAllEntities();
@@ -50,7 +69,7 @@ const SelectEntityPage = () => {
     let baseName = entity.entity_name;
     if (isZoho && entity.entity_id === 'DEFAULT') {
       baseName = 'Consolidated Analytics';
-    } else if (entity.entity_name === 'Default Entity') {
+    } else if (entity.entity_name === 'Default Entity' || entity.entity_name === 'Top Level' || entity.entity_id === 'DEFAULT') {
       baseName = 'Top Level';
     }
     const combinedName = `${entity.entity_id} - ${baseName}`;
@@ -62,16 +81,17 @@ const SelectEntityPage = () => {
     };
   });
 
-  // Automatically update 201 display name once entities are fetched
+  // Automatically update selected entity once entities are fetched:
+  // If 201 is found, use it; otherwise default to DEFAULT - Top Level
   useEffect(() => {
     if (entityData && entityData.length > 0) {
+      const isZoho = getERPSystem() === 'Zoho';
       const match201 = entityData.find((e) => String(e.entity_id) === '201');
       if (match201) {
-        const isZoho = getERPSystem() === 'Zoho';
         let baseName = match201.entity_name;
         if (isZoho && match201.entity_id === 'DEFAULT') {
           baseName = 'Consolidated Analytics';
-        } else if (match201.entity_name === 'Default Entity') {
+        } else if (match201.entity_name === 'Default Entity' || match201.entity_name === 'Top Level' || match201.entity_id === 'DEFAULT') {
           baseName = 'Top Level';
         }
         const combinedName = `${match201.entity_id} - ${baseName}`;
@@ -81,8 +101,26 @@ const SelectEntityPage = () => {
           name: baseName,
           displayName: combinedName
         };
-        setSelectedEntityObj((prev) => (prev && String(prev.entityId) !== '201' ? prev : defaultObj));
-        setSelectedEntity((prev) => (prev && prev !== '201' && prev !== 'Choose Entity' && !prev.startsWith('201') ? prev : combinedName));
+        setSelectedEntityObj((prev) => (prev && String(prev.entityId) !== '201' && String(prev.entityId) !== 'DEFAULT' ? prev : defaultObj));
+        setSelectedEntity((prev) => (prev && prev !== '201' && prev !== 'Choose Entity' && !prev.startsWith('201') && !prev.startsWith('DEFAULT') ? prev : combinedName));
+      } else {
+        // If 201 is not found in db entity master, default to DEFAULT - Top Level
+        const matchDefault = entityData.find((e) => 
+          String(e.entity_id).toUpperCase() === 'DEFAULT' || 
+          e.entity_name === 'Default Entity' || 
+          e.entity_name === 'Top Level'
+        );
+        const baseName = isZoho ? 'Top Level' : 'Top Level';
+        const entityId = matchDefault ? matchDefault.entity_id : 'DEFAULT';
+        const combinedName = `${entityId} - ${baseName}`;
+        const defaultObj = {
+          id: matchDefault?.id || 0,
+          entityId: entityId,
+          name: baseName,
+          displayName: combinedName
+        };
+        setSelectedEntityObj((prev) => (prev && String(prev.entityId) !== '201' && String(prev.entityId) !== 'DEFAULT' ? prev : defaultObj));
+        setSelectedEntity((prev) => (prev && prev !== '201' && prev !== 'Choose Entity' && !prev.startsWith('201') && !prev.startsWith('DEFAULT') ? prev : combinedName));
       }
     }
   }, [entityData]);
@@ -136,10 +174,12 @@ const SelectEntityPage = () => {
   };
 
   const handleSelectEntity = (entity) => {
+    const isZoho = getERPSystem() === 'Zoho';
+    const fallbackDefaultName = isZoho ? 'Consolidated Analytics' : 'Top Level';
     const targetEntity = entity || selectedEntityObj || {
-      entityId: '201',
-      name: '201',
-      displayName: '201'
+      entityId: 'DEFAULT',
+      name: fallbackDefaultName,
+      displayName: `DEFAULT - ${fallbackDefaultName}`
     };
 
     setSelectedEntity(targetEntity.displayName);
@@ -163,6 +203,12 @@ const SelectEntityPage = () => {
         entity_id: 'DEFAULT',
         entity_name: 'Consolidated Analytics',
         id: 0
+      });
+    } else if (String(targetEntity.entityId).toUpperCase() === 'DEFAULT') {
+      useInvoiceStore.getState().setEntityMaster({
+        entity_id: 'DEFAULT',
+        entity_name: targetEntity.name || 'Top Level',
+        id: targetEntity.id || 0
       });
     } else if (String(targetEntity.entityId) === '201') {
       useInvoiceStore.getState().setEntityMaster({
