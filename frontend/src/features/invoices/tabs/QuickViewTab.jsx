@@ -99,7 +99,9 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
 
     useEffect(() => () => clearTimeout(debounceRef.current), []);
 
-    const displayValue = isCurrencyField && (!isFocused || forceDisabled || !field.editable)
+    const isFieldEditable = typeof field.editable === "function" ? !forceDisabled : (field.editable !== false);
+
+    const displayValue = isCurrencyField && (!isFocused || forceDisabled || !isFieldEditable)
         ? formatNumberWithCommas(localValue)
         : localValue;
 
@@ -107,7 +109,7 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
         label: field.label,
         placeholder: field.placeholder,
         value: displayValue,
-        disabled: forceDisabled || !field.editable,
+        disabled: forceDisabled || !isFieldEditable,
         onMouseEnter: () => onHover(field.key),
         onMouseLeave: onLeave,
         onFocus: isCurrencyField ? handleFocus : undefined,
@@ -1119,50 +1121,57 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                         if (!field.visible) return true;
                                         return field.visible(quickViewFormData, entityMaster);
                                     })
-                                    .map(field => (
-                                        <div key={field.key} className="flex flex-col justify-start">
-                                            {field.key === "exchangeRate" && (quickViewFormData?.invoiceCurrency ?? "USD") === "USD"
-                                                ? null
-                                                : (
-                                                    <FieldRenderer
-                                                        field={field}
-                                                        storeValue={
-                                                            field.key === "totalPayable"
-                                                                ? totalAmountPayable
-                                                                : (field.key === "requestNo" || field.key === "requestId")
-                                                                    ? (quickViewFormData?.requestNo || quickViewFormData?.requestId || activeInvoiceData?.request_id || "")
-                                                                    : (quickViewFormData?.[field.key] ?? "")
-                                                        }
-                                                        currencyOptions={currencyOptions}
-                                                        fetchCurrencyOptions={fetchCurrencyOptions}
-                                                        currencyLoading={currencyLoading}
-                                                        // Inject TDS options dynamically
-                                                        {...(field.key === "tdsSection" ? {
-                                                            options: tdsOptions,
-                                                            loading: tdsLoading,
-                                                            onOpenChange: (open) => {
-                                                                if (open && tdsOptions.length === 0 && !tdsLoading) {
-                                                                    fetchTDSOptions();
-                                                                }
+                                    .map(field => {
+                                        const isFieldEditable = typeof field.editable === "function"
+                                            ? field.editable(quickViewFormData, entityMaster)
+                                            : field.editable !== false;
+                                        const isFieldDisabled = isViewOnly || !isFieldEditable;
+
+                                        return (
+                                            <div key={field.key} className="flex flex-col justify-start">
+                                                {field.key === "exchangeRate" && (quickViewFormData?.invoiceCurrency ?? "USD") === "USD"
+                                                    ? null
+                                                    : (
+                                                        <FieldRenderer
+                                                            field={field}
+                                                            storeValue={
+                                                                field.key === "totalPayable"
+                                                                    ? totalAmountPayable
+                                                                    : (field.key === "requestNo" || field.key === "requestId")
+                                                                        ? (quickViewFormData?.requestNo || quickViewFormData?.requestId || activeInvoiceData?.request_id || "")
+                                                                        : (quickViewFormData?.[field.key] ?? "")
                                                             }
-                                                        } : {})}
-                                                        onCommit={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorFieldCommit : handleCommit}
-                                                        vendorOptions={(field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName") ? vendorOptions : undefined}
-                                                        filterVendors={filterVendors}
-                                                        onVendorSelect={handleVendorSelect}
-                                                        onHover={handleHoverField}
-                                                        onLeave={handleLeaveField}
-                                                        isDuplicate={isDuplicate}
-                                                        duplicateMessage={duplicateMessage}
-                                                        isAmountMismatch={isAmountMismatch}
-                                                        forceDisabled={isViewOnly}
-                                                        onSearch={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorSearch : undefined}
-                                                        searchLoading={isSearching}
-                                                    />
-                                                )
-                                            }
-                                        </div>
-                                    ))}
+                                                            currencyOptions={currencyOptions}
+                                                            fetchCurrencyOptions={fetchCurrencyOptions}
+                                                            currencyLoading={currencyLoading}
+                                                            // Inject TDS options dynamically
+                                                            {...(field.key === "tdsSection" ? {
+                                                                options: tdsOptions,
+                                                                loading: tdsLoading,
+                                                                onOpenChange: (open) => {
+                                                                    if (open && tdsOptions.length === 0 && !tdsLoading) {
+                                                                        fetchTDSOptions();
+                                                                    }
+                                                                }
+                                                            } : {})}
+                                                            onCommit={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorFieldCommit : handleCommit}
+                                                            vendorOptions={(field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName") ? vendorOptions : undefined}
+                                                            filterVendors={filterVendors}
+                                                            onVendorSelect={handleVendorSelect}
+                                                            onHover={handleHoverField}
+                                                            onLeave={handleLeaveField}
+                                                            isDuplicate={isDuplicate}
+                                                            duplicateMessage={duplicateMessage}
+                                                            isAmountMismatch={isAmountMismatch}
+                                                            forceDisabled={isFieldDisabled}
+                                                            onSearch={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorSearch : undefined}
+                                                            searchLoading={isSearching}
+                                                        />
+                                                    )
+                                                }
+                                            </div>
+                                        );
+                                    })}
                             </div>
                         )}
 

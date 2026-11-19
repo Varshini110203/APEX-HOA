@@ -17,8 +17,13 @@ const SelectEntityPage = () => {
   const roleContainerRef = useRef(null);
   const setEntity = useCommonStore((state) => state.setEntity)
 
-  // State for selected entity display and dropdown visibility
-  const [selectedEntity, setSelectedEntity] = useState('Choose Entity');
+  // State for selected entity display and dropdown visibility - default to 201
+  const [selectedEntity, setSelectedEntity] = useState('201');
+  const [selectedEntityObj, setSelectedEntityObj] = useState({
+    entityId: '201',
+    name: '201',
+    displayName: '201'
+  });
   const [isSelectOpen, setIsSelectOpen] = useState(false);
 
 
@@ -56,6 +61,31 @@ const SelectEntityPage = () => {
       displayName: combinedName      // Combined display name for dropdown
     };
   });
+
+  // Automatically update 201 display name once entities are fetched
+  useEffect(() => {
+    if (entityData && entityData.length > 0) {
+      const match201 = entityData.find((e) => String(e.entity_id) === '201');
+      if (match201) {
+        const isZoho = getERPSystem() === 'Zoho';
+        let baseName = match201.entity_name;
+        if (isZoho && match201.entity_id === 'DEFAULT') {
+          baseName = 'Consolidated Analytics';
+        } else if (match201.entity_name === 'Default Entity') {
+          baseName = 'Top Level';
+        }
+        const combinedName = `${match201.entity_id} - ${baseName}`;
+        const defaultObj = {
+          id: match201.id || 0,
+          entityId: match201.entity_id,
+          name: baseName,
+          displayName: combinedName
+        };
+        setSelectedEntityObj((prev) => (prev && String(prev.entityId) !== '201' ? prev : defaultObj));
+        setSelectedEntity((prev) => (prev && prev !== '201' && prev !== 'Choose Entity' && !prev.startsWith('201') ? prev : combinedName));
+      }
+    }
+  }, [entityData]);
 
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
@@ -106,26 +136,39 @@ const SelectEntityPage = () => {
   };
 
   const handleSelectEntity = (entity) => {
-    setSelectedEntity(entity.displayName);
+    const targetEntity = entity || selectedEntityObj || {
+      entityId: '201',
+      name: '201',
+      displayName: '201'
+    };
+
+    setSelectedEntity(targetEntity.displayName);
+    setSelectedEntityObj(targetEntity);
     setIsSelectOpen(false);
 
     // Store active role context without mutating the primary user object
     setActiveRole(activeRole);
 
     // Store the entity_id as the FK value sent in X-Entity header to the backend
-    setEntity(entity.entityId || entity.name);
-    sessionStorage.setItem('selected_entity', entity.entityId || entity.name); // entity_id for DB FK
-    sessionStorage.setItem('selected_entity_name', entity.displayName);         // Display name for UI
+    setEntity(targetEntity.entityId || targetEntity.name);
+    sessionStorage.setItem('selected_entity', targetEntity.entityId || targetEntity.name); // entity_id for DB FK
+    sessionStorage.setItem('selected_entity_name', targetEntity.displayName);         // Display name for UI
 
     // Sync selected entity details immediately to useInvoiceStore
-    const rawEntity = entityData.find((item) => item.entity_id === entity.entityId);
+    const rawEntity = entityData.find((item) => String(item.entity_id) === String(targetEntity.entityId));
     if (rawEntity) {
       useInvoiceStore.getState().setEntityMaster(rawEntity);
-    } else if (getERPSystem() === 'Zoho' && entity.entityId === 'DEFAULT') {
+    } else if (getERPSystem() === 'Zoho' && targetEntity.entityId === 'DEFAULT') {
       useInvoiceStore.getState().setEntityMaster({
         entity_id: 'DEFAULT',
         entity_name: 'Consolidated Analytics',
         id: 0
+      });
+    } else if (String(targetEntity.entityId) === '201') {
+      useInvoiceStore.getState().setEntityMaster({
+        entity_id: '201',
+        entity_name: targetEntity.name || '201',
+        id: targetEntity.id || 0
       });
     }
 
@@ -284,50 +327,69 @@ const SelectEntityPage = () => {
               </button>
             </div>
           ) : (
-            <div className="relative w-full text-left mt-6" ref={entityContainerRef}>
-              <label className="text-[12px] text-gray-500 mb-1 block font-medium">Select Entity</label>
-              <button
-                ref={entityButtonRef}
-                type="button"
-                className="w-full flex justify-between items-center h-[40px] px-4 rounded-md text-[15px] bg-[#1e9bd8] hover:opacity-85 active:opacity-75 text-white font-medium transition-all focus:outline-none"
-                onClick={() => setIsSelectOpen(!isSelectOpen)}
-              >
-                <span>{selectedEntity}</span>
-                <svg
-                  className={`w-4 h-4 transition-transform duration-200 ${isSelectOpen ? 'rotate-180' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+            <>
+              <div className="relative w-full text-left mt-6" ref={entityContainerRef}>
+                <label className="text-[12px] text-gray-500 mb-1 block font-medium">Select Entity</label>
+                <button
+                  ref={entityButtonRef}
+                  type="button"
+                  className="w-full flex justify-between items-center h-[40px] px-4 rounded-md text-[15px] bg-[#f8f9fa] border border-gray-200 hover:bg-gray-50 active:bg-gray-100 text-gray-700 font-medium transition-all focus:outline-none"
+                  onClick={() => setIsSelectOpen(!isSelectOpen)}
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
+                  <span className="truncate">{selectedEntity}</span>
+                  <svg
+                    className={`w-4 h-4 ml-2 flex-shrink-0 transition-transform duration-200 ${isSelectOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
 
-              {isSelectOpen && (
-                <div 
-                  className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-y-auto"
-                  style={{ maxHeight: maxEntityDropdownHeight }}
+                {isSelectOpen && (
+                  <div 
+                    className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 overflow-y-auto"
+                    style={{ maxHeight: maxEntityDropdownHeight }}
+                  >
+                    <ul className="py-1">
+                      {entities.map((entity) => {
+                        const isCurrent = String(selectedEntityObj?.entityId) === String(entity.entityId) || selectedEntity === entity.displayName;
+                        return (
+                          <li key={entity.id}>
+                            <button
+                              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                                isCurrent
+                                  ? 'bg-blue-50 text-[#1e9bd8] font-semibold'
+                                  : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                              }`}
+                              onClick={() => handleSelectEntity(entity)}
+                            >
+                              {entity.displayName}
+                            </button>
+                          </li>
+                        );
+                      })}
+                      {entities.length === 0 && (
+                        <li className="px-4 py-2 text-sm text-gray-500 italic text-center disabled">
+                          No entities found.
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8">
+                <button
+                  type="button"
+                  className="w-full flex justify-center items-center h-[40px] px-4 rounded-md text-[15px] bg-[#1e9bd8] hover:opacity-85 active:opacity-75 text-white font-medium transition-all focus:outline-none"
+                  onClick={() => handleSelectEntity(selectedEntityObj)}
                 >
-                  <ul className="py-1">
-                    {entities.map((entity) => (
-                      <li key={entity.id}>
-                        <button
-                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
-                          onClick={() => handleSelectEntity(entity)}
-                        >
-                          {entity.displayName}
-                        </button>
-                      </li>
-                    ))}
-                    {entities.length === 0 && (
-                      <li className="px-4 py-2 text-sm text-gray-500 italic text-center disabled">
-                        No entities found.
-                      </li>
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
+                  Proceed
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>

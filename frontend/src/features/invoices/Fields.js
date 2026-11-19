@@ -48,8 +48,7 @@ export const QUICK_VIEW_CONFIG = [
                 key: "feeAmount",
                 label: "Fee Amount",
                 type: "input",
-                editable: true,
-                visible: (f) => f.anyFeeApplicable === "Yes" || f.feeApplicable === "Yes"
+                editable: (f) => String(f?.anyFeeApplicable || f?.feeApplicable || "").trim().toLowerCase() === "yes"
             },
             {
                 key: "expenseType",
