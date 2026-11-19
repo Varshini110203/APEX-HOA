@@ -73,20 +73,16 @@ const AddInvoiceModal = ({
     const fileInputRef        = useRef(null);
     const attachmentInputRef  = useRef(null);
 
-    // Handle invoice PDF files
+    // Handle invoice PDF file (only one invoice allowed)
     const handleFiles = (incoming) => {
         const allFiles = Array.from(incoming);
-        const pdfs     = allFiles.filter((f) => f.type === "application/pdf");
+        const pdfs     = allFiles.filter(
+            (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+        );
 
-        setFiles((prev) => {
-            const existing = new Set(
-                prev.map((f) => f.name + (f.webkitRelativePath || ""))
-            );
-            const newFiles = pdfs.filter(
-                (f) => !existing.has(f.name + (f.webkitRelativePath || ""))
-            );
-            return [...prev, ...newFiles];
-        });
+        if (pdfs.length > 0) {
+            setFiles([pdfs[0]]);
+        }
     };
 
     // Handle other attachments (any file type, multiple)
@@ -99,8 +95,19 @@ const AddInvoiceModal = ({
         });
     };
 
-    const handleFileInput        = (e) => handleFiles(e.target.files);
-    const handleAttachmentInput  = (e) => handleAttachmentFiles(e.target.files);
+    const handleFileInput = (e) => {
+        handleFiles(e.target.files);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+    };
+
+    const handleAttachmentInput = (e) => {
+        handleAttachmentFiles(e.target.files);
+        if (attachmentInputRef.current) {
+            attachmentInputRef.current.value = "";
+        }
+    };
 
     const handleDeleteAttachment = (name) => {
         setAttachments((prev) => prev.filter((f) => f.name !== name));
@@ -236,32 +243,24 @@ const AddInvoiceModal = ({
                     {/* ── Divider ────────────────────────────────────────── */}
                     <div className="border-t border-[#F0F4F8]" />
 
-                    {/* ── Upload section ─────────────────────────────────── */}
+                    {/* ── Upload Invoice section ─────────────────────────── */}
                     <div className="flex flex-col gap-3">
                         <p className="text-[13px] font-medium text-[#22B4E6] custom-font-jura">
-                            Upload Invoice Files
+                            Upload Invoice
                         </p>
 
-                        <div className="flex gap-3">
+                        <div>
                             <CustomButton
-                                type="submit"
+                                type="button"
                                 variant="outline"
                                 onClick={() => fileInputRef.current?.click()}
                             >
                                 Upload Invoice
                             </CustomButton>
-                            <CustomButton
-                                type="button"
-                                variant="primary"
-                                onClick={() => attachmentInputRef.current?.click()}
-                            >
-                                Upload Other Attachments
-                            </CustomButton>
                         </div>
 
-                        {/* Hidden Inputs */}
-                        <input ref={fileInputRef} type="file" accept=".pdf" multiple className="hidden" onChange={handleFileInput} />
-                        <input ref={attachmentInputRef} type="file" multiple className="hidden" onChange={handleAttachmentInput} />
+                        {/* Hidden Input for Invoice (single file only) */}
+                        <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileInput} />
 
                         {/* Invoice File List */}
                         {files.length > 0 && (
@@ -298,6 +297,29 @@ const AddInvoiceModal = ({
                                 ))}
                             </div>
                         )}
+                    </div>
+
+                    {/* ── Divider ────────────────────────────────────────── */}
+                    <div className="border-t border-[#F0F4F8]" />
+
+                    {/* ── Upload Attachment section ──────────────────────── */}
+                    <div className="flex flex-col gap-3">
+                        <p className="text-[13px] font-medium text-[#22B4E6] custom-font-jura">
+                            Upload Attachment
+                        </p>
+
+                        <div>
+                            <CustomButton
+                                type="button"
+                                variant="primary"
+                                onClick={() => attachmentInputRef.current?.click()}
+                            >
+                                Upload Attachment
+                            </CustomButton>
+                        </div>
+
+                        {/* Hidden Input for Attachment */}
+                        <input ref={attachmentInputRef} type="file" multiple className="hidden" onChange={handleAttachmentInput} />
 
                         {/* Attachment List */}
                         {attachments.length > 0 && (
