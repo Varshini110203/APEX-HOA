@@ -294,7 +294,7 @@ export const useInvoiceStore = create((set, get) => ({
             if (key === "paymentTerm") updatedFormData.paymentTerms = value;
 
             // Reset fee amount if fee applicable is No
-            if (key === "anyFeeApplicable" && value !== "Yes") updatedFormData.feeAmount = "";
+            if ((key === "anyFeeApplicable" || key === "feeApplicable") && String(value || "").toLowerCase() !== "yes") updatedFormData.feeAmount = "";
 
             return { quickViewFormData: updatedFormData };
         }),
