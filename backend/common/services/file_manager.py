@@ -11,9 +11,12 @@ UPLOAD_BASE_DIR = "uploads"
 SUBFOLDERS = {
     "in_progress": "in_progress_files",
     "deleted": "deleted_files",
-    "posted_stage": f"posted_to_{TOOL}_files",
+    "posted_stage": f"posted_to_{TOOL}",
     "archive": "archived_files",
-    "non_invoices": "non_invoice"
+    "non_invoices": "non_invoice",
+    "payment_processed": "payment_processed",
+    "processed_payment": "payment_processed",
+    "request_closed": "request_closed"
 }
 
 def init_upload_folders():
@@ -34,7 +37,10 @@ def get_folder_path(category: str) -> str:
     """Get the relative path of a subfolder."""
     folder = SUBFOLDERS.get(category)
     if not folder:
-        raise ValueError(f"Invalid folder category: {category}")
+        if category in SUBFOLDERS.values():
+            folder = category
+        else:
+            raise ValueError(f"Invalid folder category: {category}")
     return os.path.join(UPLOAD_BASE_DIR, folder)
 
 def ensure_local_file(file_path: str) -> str:
@@ -95,7 +101,25 @@ def move_invoice_file(current_path: str, target_category: str) -> Optional[str]:
         if not source_blob_client.exists():
             from common.config.config import TOOL
             from common.services.azure_blob import AZURE_BLOB_FOLDER
-            search_folders = ["in_progress_files", "deleted_files", "posted_to_sage_files", "posted_to_zoho_files", "archived_files", "non_invoice", "read", "unread"]
+            search_folders = [
+                "archived_files",
+                "attachments",
+                "create_reports",
+                "deleted_files",
+                "in_progress_files",
+                "non_invoice",
+                f"posted_to_{TOOL}",
+                "posted_to_sage",
+                "posted_to_zoho",
+                "payment_processed",
+                "request_closed",
+                "posted_to_sage_files",
+                "posted_to_zoho_files",
+                "payment_processed_files",
+                "request_closed_files",
+                "read",
+                "unread"
+            ]
             found = False
             prefixes = []
             if AZURE_BLOB_FOLDER:

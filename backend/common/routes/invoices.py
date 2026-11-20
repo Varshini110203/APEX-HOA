@@ -2332,8 +2332,10 @@ async def get_invoice_pdf_link(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    from common.services.azure_blob import get_pdf_link, get_blob_name_from_path
-    blob_name = get_blob_name_from_path(invoice.file_path)
+    from common.services.azure_blob import get_pdf_link, get_blob_name_from_path, find_blob_client
+    _, blob_name = find_blob_client(invoice.file_path)
+    if not blob_name:
+        blob_name = get_blob_name_from_path(invoice.file_path)
     pdf_link = get_pdf_link(blob_name)
     if not pdf_link:
         raise HTTPException(status_code=500, detail="Failed to generate SAS link")
@@ -2392,11 +2394,10 @@ async def get_invoice_pdf(
         logger.warning(f"Failed to retrieve pdf_binary from RawExtractionData: {raw_err}")
 
     # 3. Third priority: Try streaming from Azure Blob Storage
-    from common.services.azure_blob import container_client, get_blob_name_from_path
-    blob_name = get_blob_name_from_path(file_path)
+    from common.services.azure_blob import container_client, get_blob_name_from_path, find_blob_client
     try:
-        blob_client = container_client.get_blob_client(blob_name)
-        if blob_client.exists():
+        blob_client, blob_name = find_blob_client(file_path)
+        if blob_client and blob_client.exists():
             from fastapi import Response
             blob_data = blob_client.download_blob().readall()
             return Response(
@@ -2407,7 +2408,7 @@ async def get_invoice_pdf(
                 }
             )
     except Exception as e:
-        logger.error(f"Failed to stream blob {blob_name} from Azure: {e}")
+        logger.error(f"Failed to stream blob from Azure for {file_path}: {e}")
 
     # 4. Fourth priority: Check attachments for any available PDF file
     if invoice.attachments:

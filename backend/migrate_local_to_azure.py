@@ -21,9 +21,9 @@ MAPPING = {
         "db_folder": "in_progress_files"
     },
     "posted_stage": {
-        "local_folders": ["posted_stage_files", "posted_to_sage_files"],
-        "azure_prefix": "posted_to_sage_files",
-        "db_folder": "posted_to_sage_files"
+        "local_folders": ["posted_stage_files", "posted_to_sage_files", "posted_to_sage"],
+        "azure_prefix": "posted_to_sage",
+        "db_folder": "posted_to_sage"
     },
     "deleted": {
         "local_folders": ["deleted_files"],
@@ -34,6 +34,16 @@ MAPPING = {
         "local_folders": ["archive_files", "archived_files"],
         "azure_prefix": "archived_files",
         "db_folder": "archived_files"
+    },
+    "payment_processed": {
+        "local_folders": ["payment_processed_files", "payment_processed"],
+        "azure_prefix": "payment_processed",
+        "db_folder": "payment_processed"
+    },
+    "request_closed": {
+        "local_folders": ["request_closed_files", "request_closed"],
+        "azure_prefix": "request_closed",
+        "db_folder": "request_closed"
     }
 }
  

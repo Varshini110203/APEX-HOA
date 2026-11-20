@@ -78,6 +78,54 @@ def get_blob_name_from_path(file_path: str) -> str:
     # Prepend the active tool directory (prefix) to separate their paths in the container
     return f"{prefix}/{normalized}"
 
+def find_blob_client(file_path: str):
+    """
+    Given a file path or blob name, returns (blob_client, resolved_blob_name)
+    that exists in Azure Blob storage, or the default blob_client/name if not found.
+    """
+    if not file_path:
+        return None, None
+    from common.config.config import TOOL
+    blob_name = get_blob_name_from_path(file_path)
+    client = container_client.get_blob_client(blob_name)
+    if client.exists():
+        return client, blob_name
+
+    filename = os.path.basename(file_path.replace("\\", "/"))
+    search_folders = [
+        "archived_files",
+        "attachments",
+        "create_reports",
+        "deleted_files",
+        "in_progress_files",
+        "non_invoice",
+        f"posted_to_{TOOL}",
+        "posted_to_sage",
+        "posted_to_zoho",
+        "payment_processed",
+        "request_closed",
+        "posted_to_sage_files",
+        "posted_to_zoho_files",
+        "payment_processed_files",
+        "request_closed_files",
+        "read",
+        "unread"
+    ]
+    prefixes = []
+    if AZURE_BLOB_FOLDER:
+        prefixes.append(f"{AZURE_BLOB_FOLDER}/{TOOL}/")
+    prefixes.append(f"{TOOL}/")
+    prefixes.append("")
+
+    for folder_prefix in search_folders:
+        for pfx in prefixes:
+            candidate = f"{pfx}{folder_prefix}/{filename}"
+            c_client = container_client.get_blob_client(candidate)
+            if c_client.exists():
+                return c_client, candidate
+
+    return client, blob_name
+
 def ensure_container_and_folders() -> None:
     """Ensure the container exists and the default folders are created in Azure Blob Storage for the active tool."""
     if not CONNECTION_STRING or not CONTAINER_NAME:
@@ -89,13 +137,15 @@ def ensure_container_and_folders() -> None:
         
         from common.config.config import TOOL
         folders = [
-            "in_progress_files",
-            "deleted_files",
-            f"posted_to_{TOOL}_files",
             "archived_files",
-            "non_invoice",
+            "attachments",
             "create_reports",
-            "attachments"
+            "deleted_files",
+            "in_progress_files",
+            "non_invoice",
+            f"posted_to_{TOOL}",
+            "payment_processed",
+            "request_closed"
         ]
         
         prefix = f"{AZURE_BLOB_FOLDER}/{TOOL}" if AZURE_BLOB_FOLDER else TOOL

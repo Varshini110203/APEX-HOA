@@ -407,9 +407,30 @@ def _update_invoice_status(db: Session, invoice: Invoice, new_status: str):
             new_path = move_invoice_file(invoice.file_path, "posted_stage")
             if new_path:
                 invoice.file_path = new_path
+                db.add(invoice)
                 logger.info(f"Moved invoice {invoice.id} PDF to posted_stage folder: {new_path}")
         except Exception as e:
             logger.error(f"Failed to move invoice {invoice.id} PDF on status change to SAGE_POSTED: {e}", exc_info=True)
+    elif new_status == InvoiceStatus.PROCESSED_PAYMENT:
+        try:
+            from common.services.file_manager import move_invoice_file
+            new_path = move_invoice_file(invoice.file_path, "payment_processed")
+            if new_path:
+                invoice.file_path = new_path
+                db.add(invoice)
+                logger.info(f"Moved invoice {invoice.id} PDF to payment_processed folder: {new_path}")
+        except Exception as e:
+            logger.error(f"Failed to move invoice {invoice.id} PDF on status change to PROCESSED_PAYMENT: {e}", exc_info=True)
+    elif new_status == InvoiceStatus.REQUEST_CLOSED:
+        try:
+            from common.services.file_manager import move_invoice_file
+            new_path = move_invoice_file(invoice.file_path, "request_closed")
+            if new_path:
+                invoice.file_path = new_path
+                db.add(invoice)
+                logger.info(f"Moved invoice {invoice.id} PDF to request_closed folder: {new_path}")
+        except Exception as e:
+            logger.error(f"Failed to move invoice {invoice.id} PDF on status change to REQUEST_CLOSED: {e}", exc_info=True)
 
 
 def _advance_level(db: Session, invoice: Invoice, new_level: int):
