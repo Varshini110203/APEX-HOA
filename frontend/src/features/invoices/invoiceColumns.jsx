@@ -4,7 +4,7 @@ import { formatCurrency, formatIST } from "../../utils/formatters";
 import { getERPSystem } from "../../utils/envHelper";
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
-const getStatusLabel = (value, level, row = null) => {
+export const getStatusLabel = (value, level, row = null) => {
     if (row?.status_label) return row.status_label;
     if (typeof value === 'string' && (value.startsWith("Waiting for") || value.includes("(level"))) {
         return value;
@@ -38,7 +38,7 @@ const getStatusLabel = (value, level, row = null) => {
 };
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
-const StatusBadge = ({ value, level, label }) => {
+export const StatusBadge = ({ value, level, label }) => {
     const colorMap = {
         approved: "bg-green-100 text-green-700",
         pending: "bg-yellow-100 text-yellow-700",

@@ -24,8 +24,14 @@ import { getERPSystem } from '../../utils/envHelper';
 
 const MasterDataPage = () => {
     const user = useAuthStore((state) => state.user);
-    const userRole = user?.role?.toLowerCase() || '';
-    const isReadOnly = userRole === 'scanner' || userRole === 'coder' || userRole.includes('user') || userRole.includes('approver');
+    const activeRole = useAuthStore((state) => state.activeRole);
+    const currentRole = (activeRole || user?.role || '').toLowerCase();
+
+    const isAdmin = currentRole.includes('admin');
+    const isApUser = currentRole.includes('ap user') || currentRole.includes('ap_user');
+    const canSync = isAdmin || isApUser;
+
+    const isReadOnly = !isAdmin;
 
     const {
         activeTab, setActiveTab,
@@ -566,18 +572,20 @@ const MasterDataPage = () => {
                                 <Upload size={15} className="text-[#24A1DD]" />
                                 <span>Reupload</span>
                             </button>
-                            <button
-                                onClick={handleSync}
-                                disabled={syncingData}
-                                className={`flex items-center gap-1.5 px-3 h-[36px] text-[13px] font-medium border rounded-[4px] transition-all whitespace-nowrap
-                                    ${syncingData
-                                        ? 'text-gray-400 border-gray-200 cursor-not-allowed bg-gray-50'
-                                        : 'text-gray-700 border-[#24A1DD] hover:bg-[#F0F9FF]'}`}
-                            >
-                                <RefreshCw size={15} className={`${syncingData ? 'text-gray-400 animate-spin' : 'text-[#24A1DD]'}`} />
-                                <span>{syncingData ? 'Syncing...' : 'Sync'}</span>
-                            </button>
                         </>
+                    )}
+                    {!isCurrencyTab && canSync && (
+                        <button
+                            onClick={handleSync}
+                            disabled={syncingData}
+                            className={`flex items-center gap-1.5 px-3 h-[36px] text-[13px] font-medium border rounded-[4px] transition-all whitespace-nowrap
+                                ${syncingData
+                                    ? 'text-gray-400 border-gray-200 cursor-not-allowed bg-gray-50'
+                                    : 'text-gray-700 border-[#24A1DD] hover:bg-[#F0F9FF]'}`}
+                        >
+                            <RefreshCw size={15} className={`${syncingData ? 'text-gray-400 animate-spin' : 'text-[#24A1DD]'}`} />
+                            <span>{syncingData ? 'Syncing...' : 'Sync'}</span>
+                        </button>
                     )}
                     {!isReadOnly && (
                         <div style={{ minWidth: 120 }}>

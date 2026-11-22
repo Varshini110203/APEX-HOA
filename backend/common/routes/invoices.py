@@ -1098,6 +1098,9 @@ async def get_invoices(
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
+    elif tab == "all":
+        # Return all invoices without tab/status filtering
+        pass
     elif tab == "in_progress" or not tab:
         # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
         expressions.append(and_(
@@ -1495,6 +1498,9 @@ async def get_invoice_filter_options(
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
+    elif tab == "all":
+        # Return all invoices without tab/status filtering
+        pass
     elif tab == "in_progress" or not tab:
         # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
         expressions.append(and_(

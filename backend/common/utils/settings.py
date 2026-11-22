@@ -12,7 +12,7 @@ DEFAULT_SETTINGS = {
         {"label": "Coding", "path": "/coding", "roles": ["AP USER"]},
         {"label": "Invoices", "path": "/invoices", "roles": ["HOA USER", "HOA APPROVER", "AP USER", "AP APPROVER", "AR USER", "admin"]},
         {"label": "Approvals", "path": "/approvals", "roles": ["HOA APPROVER", "AP APPROVER"]},
-        {"label": "Master Data", "path": "/master-data", "roles": ["admin"]},
+        {"label": "Master Data", "path": "/master-data", "roles": ["admin", "AP USER"]},
         {"label": "Settings", "path": "/settings", "roles": ["admin"]},
         {"label": "Admin", "path": "/admin", "roles": ["admin"]}
     ],
@@ -86,6 +86,15 @@ def get_app_settings(db: Session = None):
                 if "AP USER" not in coding_roles:
                     coding_roles.append("AP USER")
                 coding_nav["roles"] = coding_roles
+
+        # Ensure 'AP USER' is in 'Master Data' navigation entry
+        if "navigation" in merged_settings and isinstance(merged_settings["navigation"], list):
+            master_nav = next((nav for nav in merged_settings["navigation"] if isinstance(nav, dict) and (nav.get("label") == "Master Data" or nav.get("path") == "/master-data")), None)
+            if master_nav:
+                master_roles = master_nav.get("roles", [])
+                if "AP USER" not in master_roles:
+                    master_roles.append("AP USER")
+                master_nav["roles"] = master_roles
 
         # Clean up navigation roles
         if "navigation" in merged_settings and isinstance(merged_settings["navigation"], list):

@@ -149,6 +149,10 @@ async def trigger_vendor_sync(
     """
     Trigger manual sync of vendors from Sage Intacct.
     """
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    if not ("admin" in user_roles or any("ap user" in r or "ap_user" in r for r in user_roles)):
+        raise HTTPException(status_code=403, detail="Only Admin and AP User can sync master data")
+
     from common.utils.erp_locator import get_erp_class
     VendorSyncService = get_erp_class("services.vendor_sync_service", "VendorSyncService")
     sync_service = VendorSyncService(db)
@@ -166,6 +170,10 @@ async def trigger_master_sync(
     """
     Trigger manual sync for specific master data.
     """
+    user_roles = [r.strip().lower() for r in (current_user.role or "").split(",")]
+    if not ("admin" in user_roles or any("ap user" in r or "ap_user" in r for r in user_roles)):
+        raise HTTPException(status_code=403, detail="Only Admin and AP User can sync master data")
+
     from common.utils.erp_locator import get_erp_class
     GLSyncService = get_erp_class("services.master_sync_services", "GLSyncService")
     LOBSyncService = get_erp_class("services.master_sync_services", "LOBSyncService")
