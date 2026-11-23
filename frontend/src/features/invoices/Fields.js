@@ -1,78 +1,34 @@
 import { getERPSystem } from "../../utils/envHelper";
 
+export const HOA_QUICK_VIEW_FIELD_KEYS = [
+    "requestNo",
+    "invoiceNumber",
+    "vendorName",
+    "vendorId",
+    "invoiceDate",
+    "totalAmount",
+    "paymentTerms",
+    "paymentMethod",
+    "anyFeeApplicable",
+    "feeAmount",
+    "expenseType",
+    "paymentReference",
+    "expenseCategory",
+    "loanNumber"
+];
+
 export const QUICK_VIEW_CONFIG = [
     {
         section: "Header",
         type: "form",
         fields: [
-            { key: "requestNo", label: "Request No", type: "input", editable: false },
+            { key: "requestNo", label: "Request Number", type: "input", editable: false },
             { key: "vendorId", label: "Vendor Code", type: "input", editable: false, required: true },
             { key: "vendorName", label: "Vendor Name", type: "input", editable: true, required: true },
             { key: "invoiceNumber", label: "Invoice Number", type: "input", editable: true, required: true },
             { key: "referenceNumber", label: "Reference Number", type: "input", editable: true, required: getERPSystem() !== "Zoho" },
-            { key: "invoiceDate", label: "Vendor Invoice Date", type: "date", editable: true, required: true },
             { key: "dueDate", label: "Due Date", type: "date", editable: true, required: getERPSystem() !== "Zoho" },
             { key: "postingDate", label: "Posting Date", type: "date", editable: true, required: getERPSystem() !== "Zoho" },
-            {
-                key: "paymentTerms",
-                label: "Payment Term",
-                type: "dropdown",
-                editable: true,
-                options: [
-                    { label: "RUSH", value: "RUSH" },
-                    { label: "Pay in Next Week's Payment Run", value: "Pay in Next Week's Payment Run" }
-                ]
-            },
-            {
-                key: "paymentMethod",
-                label: "Payment Method",
-                type: "dropdown",
-                editable: true,
-                options: [
-                    { label: "Check", value: "Check" },
-                    { label: "ACH", value: "ACH" },
-                    { label: "Wire", value: "Wire" }
-                ]
-            },
-            {
-                key: "anyFeeApplicable",
-                label: "Any Fee Applicable?",
-                type: "dropdown",
-                editable: true,
-                options: [
-                    { label: "Yes", value: "Yes" },
-                    { label: "No", value: "No" }
-                ]
-            },
-            {
-                key: "feeAmount",
-                label: "Fee Amount",
-                type: "input",
-                editable: (f) => String(f?.anyFeeApplicable || f?.feeApplicable || "").trim().toLowerCase() === "yes"
-            },
-            {
-                key: "expenseType",
-                label: "Expense Type",
-                type: "dropdown",
-                editable: true,
-                options: [
-                    { label: "Pass-through", value: "Pass-through" },
-                    { label: "Non-Pass-through", value: "Non-Pass-through" }
-                ]
-            },
-            { key: "paymentReference", label: "Payment Reference", type: "input", editable: true },
-            {
-                key: "expenseCategory",
-                label: "Expense Category",
-                type: "dropdown",
-                editable: true,
-                options: [
-                    { label: "HOA", value: "HOA" },
-                    { label: "Inspection Fee", value: "Inspection Fee" },
-                    { label: "HOA Tax", value: "HOA Tax" }
-                ]
-            },
-            { key: "loanNumber", label: "Loan Number", type: "input", editable: true },
             {
                 key: "invoiceCurrency", label: "Invoice Currency", type: "dropdown", editable: true
                 // options will be injected dynamically
@@ -81,7 +37,6 @@ export const QUICK_VIEW_CONFIG = [
                 key: "exchangeRate", label: "Exchange Rate", type: "input", editable: true,
                 visible: (f) => f.invoiceCurrency !== "USD"
             },
-            { key: "totalAmount", label: "Vendor Invoice Amount", type: "input", editable: true, required: getERPSystem() !== "Zoho" },
             { key: "totalPayable", label: "Total Payable", type: "input", editable: true, required: getERPSystem() !== "Zoho" },
             { key: "memo", label: getERPSystem() === "Zoho" ? "Subject" : "Memo", type: "input", editable: true },
             {
@@ -120,6 +75,84 @@ export const QUICK_VIEW_CONFIG = [
             { key: "costCenter", label: "Cost Center", type: "input", editable: true, showInAllFields: true },
             { key: "serviceStartDate", label: "Service Period Start", type: "date", editable: true, showInAllFields: true },
             { key: "serviceEndDate", label: "Service Period End", type: "date", editable: true, showInAllFields: true },
+        ],
+    },
+    {
+        section: "HOA Fields",
+        type: "form",
+        fields: [
+            { key: "requestNo", label: "Request Number", type: "input", editable: false, required: true },
+            { key: "invoiceNumber", label: "Invoice Number", type: "input", editable: true, required: true },
+            { key: "vendorName", label: "Vendor Name", type: "input", editable: true, required: true },
+            { key: "vendorId", label: "Vendor Code", type: "input", editable: false, required: true },
+            { key: "invoiceDate", label: "Vendor Invoice Date", type: "date", editable: true, required: true },
+            { key: "totalAmount", label: "Vendor Invoice Amount", type: "input", editable: true, required: true },
+            {
+                key: "paymentTerms",
+                label: "Payment Term",
+                type: "dropdown",
+                editable: true,
+                required: true,
+                options: [
+                    { label: "RUSH", value: "RUSH" },
+                    { label: "Pay in Next Week's Payment Run", value: "Pay in Next Week's Payment Run" }
+                ]
+            },
+            {
+                key: "paymentMethod",
+                label: "Payment Method",
+                type: "dropdown",
+                editable: true,
+                required: true,
+                options: [
+                    { label: "Check", value: "Check" },
+                    { label: "ACH", value: "ACH" },
+                    { label: "Wire", value: "Wire" }
+                ]
+            },
+            {
+                key: "anyFeeApplicable",
+                label: "Any Fee Applicable?",
+                type: "dropdown",
+                editable: true,
+                required: true,
+                options: [
+                    { label: "Yes", value: "Yes" },
+                    { label: "No", value: "No" }
+                ]
+            },
+            {
+                key: "feeAmount",
+                label: "Fee Amount",
+                type: "input",
+                editable: (f) => String(f?.anyFeeApplicable || f?.feeApplicable || "").trim().toLowerCase() === "yes",
+                required: (f) => String(f?.anyFeeApplicable || f?.feeApplicable || "").trim().toLowerCase() === "yes",
+            },
+            {
+                key: "expenseType",
+                label: "Expense Type",
+                type: "dropdown",
+                editable: true,
+                required: true,
+                options: [
+                    { label: "Pass-through", value: "Pass-through" },
+                    { label: "Non-Pass-through", value: "Non-Pass-through" }
+                ]
+            },
+            { key: "paymentReference", label: "Payment Reference", type: "input", editable: true, required: true },
+            {
+                key: "expenseCategory",
+                label: "Expense Category",
+                type: "dropdown",
+                editable: true,
+                required: true,
+                options: [
+                    { label: "HOA", value: "HOA" },
+                    { label: "Inspection Fee", value: "Inspection Fee" },
+                    { label: "HOA Tax", value: "HOA Tax" }
+                ]
+            },
+            { key: "loanNumber", label: "Loan Number", type: "input", editable: true, required: true },
         ],
     },
     // AllFields only sections ↓

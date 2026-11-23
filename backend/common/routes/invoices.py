@@ -3015,7 +3015,7 @@ async def update_invoice_status(
                         entity=invoice.entity
                     ))
 
-                    # Trigger notification email to AP User & HOA User
+                    # Trigger notification email to AP User & AR User
                     if background_tasks:
                         background_tasks.add_task(
                             email_service.notify_stage_invoice_approved,
@@ -3251,7 +3251,7 @@ async def repost_to_sage(
             db.add(invoice)
             db.commit()
 
-            # Trigger notification email to AP User & HOA User
+            # Trigger notification email to AP User & AR User
             if background_tasks:
                 background_tasks.add_task(
                     email_service.notify_stage_invoice_approved,

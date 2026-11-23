@@ -52,17 +52,22 @@ const TabContent = React.memo(({ tabName, isActive }) => {
     );
 });
 
+const HOA_TABS = ["Quick View", "Workflow", "Audit Trail", "Attachments"];
+
 const InvoiceRightPanel = () => {
 
     const { invoiceActiveTab, setInvoiceActiveTab, tabList, activeInvoiceData } = useInvoiceStore();
     const activeRole = useAuthStore((state) => state.activeRole);
     const user = useAuthStore((state) => state.user);
     const currentRole = (activeRole || user?.role || '').toLowerCase();
-    const isHoaApprover = currentRole.includes("hoa") && currentRole.includes("approver");
+    const isHoaUserOrApprover = currentRole.includes("hoa");
 
-    // Determine status and explicitly filter out Coding tab if processed or if HOA Approver
+    // Determine status and explicitly filter visible tabs:
+    // HOA User and HOA Approver only see Quick View, Workflow, Audit Trail, and Attachments
     const status = (activeInvoiceData?.status || "").toLowerCase();
-    const visibleTabs = (status === "processed" || isHoaApprover) ? tabList.filter(t => t !== "Coding") : tabList;
+    const visibleTabs = isHoaUserOrApprover
+        ? tabList.filter(t => HOA_TABS.includes(t))
+        : (status === "processed" ? tabList.filter(t => t !== "Coding") : tabList);
 
     // Safety check just in case state gets out of sync with the visible tabs
     const validActiveTab = visibleTabs.includes(invoiceActiveTab) ? invoiceActiveTab : (visibleTabs[0] || "Quick View");

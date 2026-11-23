@@ -13,7 +13,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { Modal } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import DelegateModal from "./DelegateModal";
-import { QUICK_VIEW_CONFIG } from "./Fields";
+import { QUICK_VIEW_CONFIG, HOA_QUICK_VIEW_FIELD_KEYS } from "./Fields";
 import { getInvoiceHeuristics } from "../../utils/invoiceCalculations";
 import { getERPSystem } from "../../utils/envHelper";
 import AddAttachmentModal from "./components/AddAttachmentModal";
@@ -176,23 +176,35 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
     }, [workflowData, fetchUIStatus]);
 
     const validateRequiredFields = useCallback(() => {
+        const isHoaUserOrApprover = userRole.includes("hoa");
         for (const section of QUICK_VIEW_CONFIG) {
             if (section.type !== "form") continue;
+
+            // For HOA User / Approver, only validate "HOA Fields" section (since Header is hidden in Quick View)
+            if (isHoaUserOrApprover && section.section !== "HOA Fields") continue;
+
             for (const field of section.fields) {
-                if (!field.required) continue;
+                const isRequired = typeof field.required === "function"
+                    ? field.required(quickViewFormData, entityMaster)
+                    : !!field.required;
+
+                if (!isRequired) continue;
 
                 // Check if visible
                 if (field.visible && !field.visible(quickViewFormData, entityMaster)) continue;
 
-                const value = quickViewFormData?.[field.key];
+                const value = (field.key === "requestNo" || field.key === "requestId")
+                    ? (quickViewFormData?.requestNo || quickViewFormData?.requestId || activeInvoiceData?.request_id)
+                    : quickViewFormData?.[field.key];
+
                 if (value === undefined || value === null || String(value).trim() === "") {
-                    toast.error(`${field.label} is missing.`);
+                    toast.error(`${field.label} is mandatory.`);
                     return false;
                 }
             }
         }
         return true;
-    }, [quickViewFormData]);
+    }, [quickViewFormData, activeInvoiceData, userRole, entityMaster]);
 
 
     // ── HOA User: Send to HOA Approval (Step 1-6) ──────────────────────────

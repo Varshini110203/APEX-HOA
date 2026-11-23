@@ -52,12 +52,12 @@ log = _setup_logging()
 
 async def main():
     log.info("=" * 60)
-    log.info("Approval reminder job started")
+    log.info("Workflow reminder job started")
     
     try:
         from common.utils.reminders import check_approval_reminders
         await check_approval_reminders()
-        log.info("Approval reminder job completed successfully")
+        log.info("Workflow reminder job completed successfully")
     except Exception as e:
         log.error("Unhandled error in check_approval_reminders: %s", e, exc_info=True)
         sys.exit(1)

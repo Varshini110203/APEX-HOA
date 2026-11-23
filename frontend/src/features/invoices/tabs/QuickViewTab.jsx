@@ -1,5 +1,5 @@
 import { Collapse } from "antd";
-import { QUICK_VIEW_CONFIG } from "../Fields";
+import { QUICK_VIEW_CONFIG, HOA_QUICK_VIEW_FIELD_KEYS } from "../Fields";
 import { useInvoiceStore } from "../../../store/invoice.store";
 import { useAuthStore } from "../../../store/authStore";
 import { useVendorDetailSync } from "../../hooks/useInvoiceDetailSync";
@@ -44,7 +44,7 @@ const CURRENCY_KEYS = [
 // ─────────────────────────────────────────────────────────────────────────────
 // Isolated field component — only re-renders when ITS value changes
 // ─────────────────────────────────────────────────────────────────────────────
-const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filterVendors, onVendorSelect, onHover, onLeave, isDuplicate, duplicateMessage, isAmountMismatch, forceDisabled = false, currencyOptions, fetchCurrencyOptions, currencyLoading, onSearch, searchLoading, options: dynamicOptions, loading: dynamicLoading, onOpenChange: dynamicOnOpenChange }) => {
+const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filterVendors, onVendorSelect, onHover, onLeave, isDuplicate, duplicateMessage, isAmountMismatch, forceDisabled = false, currencyOptions, fetchCurrencyOptions, currencyLoading, onSearch, searchLoading, options: dynamicOptions, loading: dynamicLoading, onOpenChange: dynamicOnOpenChange, isHoaUserOrApprover = false }) => {
     const isCurrencyField = CURRENCY_KEYS.includes(field.key);
     const [prevStoreValue, setPrevStoreValue] = useState(storeValue);
     const [localValue, setLocalValue] = useState(() => {
@@ -229,7 +229,7 @@ const FieldRenderer = memo(({ field, storeValue, onCommit, vendorOptions, filter
                     ⚠️ {duplicateMessage}
                 </div>
             )}
-            {(field.key === "totalPayable") && isAmountMismatch && (
+            {(field.key === "totalPayable" || (isHoaUserOrApprover && field.key === "totalAmount")) && isAmountMismatch && (
                 <div className="text-red-500 text-xs mt-1 font-medium italic">
                     ⚠️ Amount Mismatch
                 </div>
@@ -937,13 +937,15 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
 
     const { user, activeRole } = useAuthStore();
     const userRole = (activeRole || user?.role || "").toLowerCase();
+    const isHoaUserOrApprover = userRole.includes("hoa");
 
     const isViewOnly = useMemo(() => {
         if (activeInvoiceData?.is_archived) return true;
         const status = activeInvoiceData?.status?.toLowerCase();
         if (!status) return false;
 
-        if (userRole === 'admin') return true;
+        const roleClean = (userRole || "").toLowerCase().trim();
+        if (roleClean === 'admin') return true;
 
         // ── Finance approver with active editing session → unlock all fields ──
         const isMyEditingSession =
@@ -952,32 +954,61 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
 
         if (isMyEditingSession) return false;
 
+        const isHoaRole = roleClean.includes("hoa");
+        const isApproverRole = roleClean.includes("approver");
+        const isHoaApprover = isHoaRole && isApproverRole;
+        const isHoaUser = isHoaRole && !isApproverRole;
 
-        if (userRole === 'scanner') {
-            return status !== 'processed';
-        }
+        const isArUser = (roleClean.split(/\s+/).includes("ar") || roleClean.includes("ar user") || roleClean.includes("ar_user")) && !isHoaRole;
+        const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder") || roleClean.includes("ap_user") || roleClean.includes("ap user")) && !isHoaRole && !isArUser;
+        const isApApprover = isApRole && isApproverRole;
+        const isApUser = (isApRole && !isApproverRole) || roleClean === "coder";
 
-        if (userRole === 'coder' || userRole.includes('user') || userRole.includes('hoa') || userRole.includes('ap')) {
-            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'sage_posted', 'processed_payment', 'request_closed'].includes(status)) return true;
-            if (status === 'waiting_coding' || status === 'processed') return false;
+        // In 'processed' state:
+        // Fields should be disabled for AP User, AP Approver, AR User, and HOA Approver.
+        // Only HOA User can edit.
+        if (status === 'processed') {
+            if (isHoaUser) return false;
             return true;
         }
 
-        // All approvers are view-only unless editing session is active (handled above)
-        if (userRole === 'approver' || userRole.includes('approver')) return true;
+        // In 'waiting_coding' state:
+        // Fields should be disabled for HOA User, HOA Approver, AR User, and AP Approver.
+        // Only AP User / Coder can edit.
+        if (status === 'waiting_coding') {
+            if (isApUser) return false;
+            return true;
+        }
 
-        const VIEW_ONLY_STATUSES = ["waiting_coding"];
-        return VIEW_ONLY_STATUSES.includes(status);
+        // In 'reworked' state:
+        // HOA User can edit if rework is for HOA; AP Coder can edit if rework is for AP
+        if (status === 'reworked') {
+            if (isHoaUser || isApUser) return false;
+            return true;
+        }
+
+        if (roleClean === 'scanner') {
+            return status !== 'processed';
+        }
+
+        // All other workflow states are view-only
+        return true;
     }, [activeInvoiceData, userRole, user?.email]);
 
     const filteredSections = useMemo(() => {
         return QUICK_VIEW_CONFIG.filter(section => {
             if (section.visible && !section.visible(quickViewFormData, entityMaster)) return false;
+
+            // For HOA user/approver in Quick View: ONLY show "HOA Fields" and "Line Items"
+            if (isHoaUserOrApprover && !isAllFields) {
+                return section.section === "HOA Fields" || section.section === "Line Items";
+            }
+
             return (showOnlyHeader
-                ? section.section === "Header"
+                ? (section.section === "Header" || section.section === "HOA Fields")
                 : (isAllFields || !section.showInAllFields));
         });
-    }, [isAllFields, showOnlyHeader, quickViewFormData, entityMaster]);
+    }, [isAllFields, showOnlyHeader, quickViewFormData, entityMaster, isHoaUserOrApprover]);
 
     const handleExportExcel = useCallback(() => {
         const isZoho = getERPSystem() === "Zoho";
@@ -1115,17 +1146,21 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                         {/* ── FORM ── */}
                         {section.type === "form" && (
                             <div className="grid grid-cols-2 gap-4">
-                                {section.fields
-                                    .filter(field => {
+                                {(() => {
+                                    let fields = section.fields.filter(field => {
                                         if (!isAllFields && field.showInAllFields) return false;
                                         if (!field.visible) return true;
                                         return field.visible(quickViewFormData, entityMaster);
-                                    })
-                                    .map(field => {
+                                    });
+
+                                    return fields.map(field => {
                                         const isFieldEditable = typeof field.editable === "function"
                                             ? field.editable(quickViewFormData, entityMaster)
                                             : field.editable !== false;
                                         const isFieldDisabled = isViewOnly || !isFieldEditable;
+                                        const isRequired = typeof field.required === "function"
+                                            ? field.required(quickViewFormData, entityMaster)
+                                            : !!field.required;
 
                                         return (
                                             <div key={field.key} className="flex flex-col justify-start">
@@ -1133,7 +1168,7 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                                     ? null
                                                     : (
                                                         <FieldRenderer
-                                                            field={field}
+                                                            field={{ ...field, required: isRequired }}
                                                             storeValue={
                                                                 field.key === "totalPayable"
                                                                     ? totalAmountPayable
@@ -1166,12 +1201,14 @@ const QuickViewTab = ({ isAllFields = false, showOnlyHeader = false }) => {
                                                             forceDisabled={isFieldDisabled}
                                                             onSearch={field.key === "vendorId" || field.key === "vendorCode" || field.key === "vendorName" ? handleVendorSearch : undefined}
                                                             searchLoading={isSearching}
+                                                            isHoaUserOrApprover={isHoaUserOrApprover}
                                                         />
                                                     )
                                                 }
                                             </div>
                                         );
-                                    })}
+                                    });
+                                })()}
                             </div>
                         )}
 

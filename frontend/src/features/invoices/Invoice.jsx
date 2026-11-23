@@ -171,8 +171,8 @@ const Invoice = () => {
                 setInvoiceData(data);
                 const status = (data.status || "").toLowerCase();
                 const role = (useAuthStore.getState().activeRole || useAuthStore.getState().user?.role || currentRole || '').toLowerCase();
-                const isHoaApprover = role.includes("hoa") && role.includes("approver");
-                if (["processed", "sage_posted", "processed_payment", "request_closed"].includes(status) || isHoaApprover) setInvoiceActiveTab("Quick View");
+                const isHoaUserOrApprover = role.includes("hoa");
+                if (["processed", "sage_posted", "processed_payment", "request_closed"].includes(status) || isHoaUserOrApprover) setInvoiceActiveTab("Quick View");
                 else setInvoiceActiveTab("Coding");
             } finally {
                 setIsPreviewLoading(false);

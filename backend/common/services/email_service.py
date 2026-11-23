@@ -204,6 +204,38 @@ class EmailService:
         )
 
     @classmethod
+    def send_workflow_reminder_email(
+        cls,
+        email: str,
+        username: str,
+        vendor_name: str,
+        invoice_number: str,
+        amount: str,
+        currency: str,
+        pending_days: int,
+        status_label: str,
+        action_required: str
+    ):
+        body = f"""
+        This is a reminder that the following invoice is currently <span class='highlight'>{status_label}</span> and requires your action:
+        <br><br>
+        <span class='highlight'>Vendor:</span> {vendor_name}<br>
+        <span class='highlight'>Invoice #:</span> {invoice_number}<br>
+        <span class='highlight'>Amount:</span> {amount} {currency}<br>
+        <span class='highlight'>Status:</span> {status_label}<br>
+        <span class='highlight'>Action Required:</span> {action_required}
+        <br><br>
+        Please log in to the APEX portal as soon as possible to review and complete this task.
+        """
+        return cls.send_email(
+            to_email=email,
+            subject=f"Reminder: {status_label} - Invoice {invoice_number} ({vendor_name})",
+            title=f"Invoice Workflow Reminder",
+            name=username,
+            body=body
+        )
+
+    @classmethod
     def send_rejection_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, status: str, comment: str):
         status_label = "Rejected" if status.lower() == "rejected" else "Rework"
         body = f"""
@@ -493,7 +525,7 @@ class EmailService:
 
     @classmethod
     def notify_stage_invoice_approved(cls, invoice_id: int, approved_by: str = "AP Approver", bill_number: str = None):
-        """Notify AP user (first mail sent to AP user only) that invoice has been approved and posted to ERP."""
+        """Notify AP user and AR user that invoice has been approved and posted to ERP."""
         from common.database.database import SessionLocal
         from common.models.db_models import User, Invoice, WorkflowStep, WorkflowStepTypeEnum
 
@@ -506,7 +538,7 @@ class EmailService:
             vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
             target_emails = set()
 
-            # Find coder / AP user (first mail sent to AP user only)
+            # 1. Find coder / AP user (specific coder or fallback to active AP users)
             ap_user_found = False
             coding_step = db.query(WorkflowStep).filter(
                 WorkflowStep.invoice_id == invoice_id,
@@ -541,7 +573,20 @@ class EmailService:
                     if u.email and (("ap" in role_str and "approver" not in role_str) or "coder" in role_str):
                         target_emails.add((u.email.lower(), u.username or "AP User"))
 
-            logger.info(f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to {len(target_emails)} recipients (AP User only)")
+            # 2. Also find and include active AR Users
+            active_users = db.query(User).filter(
+                User.status == "active",
+                User.role.isnot(None)
+            ).all()
+            for u in active_users:
+                if not u.email:
+                    continue
+                role_str = (u.role or "").lower().replace("_", " ")
+                roles = [r.strip() for r in role_str.split(",")]
+                if any(r in ["ar user", "ar"] or ("ar" in r.split() and "approver" not in r) for r in roles):
+                    target_emails.add((u.email.lower(), u.username or "AR User"))
+
+            logger.info(f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to {len(target_emails)} recipients (AP and AR Users)")
             for email, username in target_emails:
                 cls.send_invoice_approved_notification(
                     email=email,
@@ -554,7 +599,7 @@ class EmailService:
                     bill_number=bill_number
                 )
         except Exception as e:
-            logger.error(f"[EmailService] Error notifying AP user for approved invoice {invoice_id}: {e}")
+            logger.error(f"[EmailService] Error notifying AP and AR users for approved invoice {invoice_id}: {e}")
         finally:
             db.close()
 

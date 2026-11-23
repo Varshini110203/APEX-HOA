@@ -721,7 +721,7 @@ async def _finalize_and_post(
         )
         db.commit()
 
-        # Trigger notification email to AP User & HOA User
+        # Trigger notification email to AP User & AR User
         if background_tasks:
             background_tasks.add_task(
                 email_service.notify_stage_invoice_approved,
@@ -2138,7 +2138,7 @@ async def approve_invoice(
                 )
                 db.commit()
 
-                # Trigger notification email to AP User & HOA User
+                # Trigger notification email to AP User & AR User
                 background_tasks.add_task(
                     email_service.notify_stage_invoice_approved,
                     invoice_id=invoice_id,
@@ -2972,7 +2972,7 @@ async def repost_to_sage(
         )
         db.commit()
 
-        # Trigger notification email to AP User & HOA User
+        # Trigger notification email to AP User & AR User
         if background_tasks:
             background_tasks.add_task(
                 email_service.notify_stage_invoice_approved,

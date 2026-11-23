@@ -380,7 +380,8 @@ const CodingTab = ({ isActive = false }) => {
         const status = activeInvoiceData?.status?.toLowerCase();
         if (!status) return false;
 
-        if (userRole === 'admin') return true;
+        const roleClean = (userRole || "").toLowerCase().trim();
+        if (roleClean === 'admin') return true;
 
         // ── Finance approver with editing enabled → allow editing ──
         const isMyEditingSession =
@@ -389,21 +390,39 @@ const CodingTab = ({ isActive = false }) => {
 
         if (isMyEditingSession) return false; // unlock all fields
 
-        if (userRole === 'scanner') {
-            return status !== 'processed';
-        }
+        const isHoaRole = roleClean.includes("hoa");
+        const isApproverRole = roleClean.includes("approver");
+        const isHoaApprover = isHoaRole && isApproverRole;
+        const isHoaUser = isHoaRole && !isApproverRole;
 
-        if (userRole === 'coder' || userRole.includes('ap') || userRole.includes('user')) {
-            if (['waiting_approval', 'waiting_hoa_approval', 'waiting_ap_approval', 'processed', 'sage_posted', 'processed_payment', 'request_closed'].includes(status)) return true;
-            if (status === 'waiting_coding') return false;
+        const isArUser = (roleClean.split(/\s+/).includes("ar") || roleClean.includes("ar user") || roleClean.includes("ar_user")) && !isHoaRole;
+        const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder") || roleClean.includes("ap_user") || roleClean.includes("ap user")) && !isHoaRole && !isArUser;
+        const isApApprover = isApRole && isApproverRole;
+        const isApUser = (isApRole && !isApproverRole) || roleClean === "coder";
+
+        // In 'processed' state: Coding tab is disabled / view-only
+        if (status === 'processed') {
             return true;
         }
 
-        // Approvers always view-only UNLESS editing session active (handled above)
-        if (userRole === 'approver' || userRole.includes('approver')) return true;
+        // In 'waiting_coding' state:
+        // Fields should be disabled for HOA User, HOA Approver, AR User, and AP Approver.
+        // Only AP User / Coder can edit.
+        if (status === 'waiting_coding') {
+            if (isApUser) return false;
+            return true;
+        }
 
-        const VIEW_ONLY_STATUSES = ["waiting_coding", "processed", "sage_posted", "processed_payment", "request_closed"];
-        return VIEW_ONLY_STATUSES.includes(status);
+        if (status === 'reworked') {
+            if (isApUser) return false;
+            return true;
+        }
+
+        if (roleClean === 'scanner') {
+            return status !== 'processed';
+        }
+
+        return true;
     }, [activeInvoiceData, userRole, user?.email]);
 
     const [selectedIds, setSelectedIds] = useState(new Set());
