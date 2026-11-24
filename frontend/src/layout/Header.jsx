@@ -137,6 +137,11 @@ const Header = () => {
                 const roles = nav.roles || [];
                 const roleAccess = roles.some(r => r.toLowerCase() === 'all' || r.toLowerCase() === currentRole);
 
+                // Do not display Master Data or Settings for HOA user and HOA approver
+                if ((nav.label === 'Master Data' || nav.label === 'Settings') && currentRole.includes('hoa')) {
+                    return false;
+                }
+
                 // Show Master Data and Settings for scanner, coder, and user roles as well
                 if ((nav.label === 'Master Data' || nav.label === 'Settings') && (currentRole === 'scanner' || currentRole === 'coder' || currentRole.includes('user'))) {
                     return true;

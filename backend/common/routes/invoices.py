@@ -204,6 +204,10 @@ def _apply_status_label_filters(status_vals, expressions, db):
                 "Approved": "approved",
                 "Rejected": "rejected",
                 "Processed": "processed",
+                "Processed Payment": "processed_payment",
+                "Paid": "paid",
+                "Paid Payment": "paid",
+                "Request Closed": "request_closed",
                 "Pending": "pending"
             }
             mapped_val = reverse_map.get(val_str, val_str)
@@ -1094,15 +1098,24 @@ async def get_invoices(
         expressions.append(Invoice.status == InvoiceStatusEnum.SAGE_POSTED)
     elif tab == "processed_payment":
         expressions.append(Invoice.status == InvoiceStatusEnum.PROCESSED_PAYMENT)
+    elif tab in ("paid_payment", "paid"):
+        expressions.append(or_(
+            Invoice.status == InvoiceStatusEnum.PAID,
+            Invoice.status == "paid",
+            Invoice.status == "paid_payment"
+        ))
     elif tab == "request_closed":
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
     elif tab == "in_progress" or not tab:
-        # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
+        # Default view: Exclude Posted, Processed Payment, Paid Payment, Request Closed, and Archived
         expressions.append(and_(
             Invoice.status != InvoiceStatusEnum.SAGE_POSTED,
             Invoice.status != InvoiceStatusEnum.PROCESSED_PAYMENT,
+            Invoice.status != InvoiceStatusEnum.PAID,
+            Invoice.status != "paid",
+            Invoice.status != "paid_payment",
             Invoice.status != InvoiceStatusEnum.REQUEST_CLOSED,
             Invoice.status != InvoiceStatusEnum.ARCHIVED,
             Invoice.status != InvoiceStatusEnum.UPLOADING
@@ -1491,15 +1504,24 @@ async def get_invoice_filter_options(
         expressions.append(Invoice.status == InvoiceStatusEnum.SAGE_POSTED)
     elif tab == "processed_payment":
         expressions.append(Invoice.status == InvoiceStatusEnum.PROCESSED_PAYMENT)
+    elif tab in ("paid_payment", "paid"):
+        expressions.append(or_(
+            Invoice.status == InvoiceStatusEnum.PAID,
+            Invoice.status == "paid",
+            Invoice.status == "paid_payment"
+        ))
     elif tab == "request_closed":
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
     elif tab == "in_progress" or not tab:
-        # Default view: Exclude Posted, Processed Payment, Request Closed, and Archived
+        # Default view: Exclude Posted, Processed Payment, Paid Payment, Request Closed, and Archived
         expressions.append(and_(
             Invoice.status != InvoiceStatusEnum.SAGE_POSTED,
             Invoice.status != InvoiceStatusEnum.PROCESSED_PAYMENT,
+            Invoice.status != InvoiceStatusEnum.PAID,
+            Invoice.status != "paid",
+            Invoice.status != "paid_payment",
             Invoice.status != InvoiceStatusEnum.REQUEST_CLOSED,
             Invoice.status != InvoiceStatusEnum.ARCHIVED
         ))
@@ -1745,6 +1767,8 @@ async def get_invoice_filter_options(
             if st == "sage_posted":
                 options.add("AP User")
             elif st == "processed_payment":
+                options.add("AP User")
+            elif st in ("paid", "paid_payment"):
                 options.add("HOA User")
             elif st in ("request_closed", "approved"):
                 options.add("Completed")
@@ -2153,7 +2177,7 @@ async def get_deleted_invoice(
         extracted_data["lineItemsSnapshot"] = line_items_list
     
     # Enrich extracted_data with metadata for specific UI views
-    if record.status in ['waiting_approval', 'approved', 'processed', 'sage_posted', 'processed_payment', 'request_closed', 'rejected', 'reworked']:
+    if record.status in ['waiting_approval', 'approved', 'processed', 'sage_posted', 'processed_payment', 'paid', 'paid_payment', 'request_closed', 'rejected', 'reworked']:
         if line_items_list:
             extracted_data["is_coded"] = True
 
@@ -2995,11 +3019,20 @@ async def update_invoice_status(
                         timestamp=get_ist_now(),
                         entity=invoice.entity
                     ))
-                    # Add queue for AP User and HOA User after successful post to Sage
+                    # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
                     db.add(WorkflowStep(
                         invoice_id=invoice_id,
                         step_name="AP User Queue",
                         step_type="ap_user_queue",
+                        user=current_user.username,
+                        status="queued",
+                        timestamp=get_ist_now(),
+                        entity=invoice.entity
+                    ))
+                    db.add(WorkflowStep(
+                        invoice_id=invoice_id,
+                        step_name="AP User Queue",
+                        step_type="ap_user_paid_queue",
                         user=current_user.username,
                         status="queued",
                         timestamp=get_ist_now(),
@@ -3228,11 +3261,20 @@ async def repost_to_sage(
                 timestamp=get_ist_now(),
                 entity=invoice.entity
             ))
-            # Add queue for AP User and HOA User after successful post to Sage
+            # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
             db.add(WorkflowStep(
                 invoice_id=invoice_id,
                 step_name="AP User Queue",
                 step_type="ap_user_queue",
+                user=current_user.username,
+                status="queued",
+                timestamp=get_ist_now(),
+                entity=invoice.entity
+            ))
+            db.add(WorkflowStep(
+                invoice_id=invoice_id,
+                step_name="AP User Queue",
+                step_type="ap_user_paid_queue",
                 user=current_user.username,
                 status="queued",
                 timestamp=get_ist_now(),

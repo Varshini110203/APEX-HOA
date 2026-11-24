@@ -342,19 +342,40 @@ class EmailService:
     def send_payment_processed_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, processed_by: str = "AP User", bill_number: str = None):
         bill_info = f"<br><span class='highlight'>Bill #:</span> {bill_number}" if bill_number else ""
         body = f"""
-        Payment has been processed for the following invoice by AP User <span class='highlight'>{processed_by}</span>:
+        Payment has been paid and confirmed for the following invoice by AP User <span class='highlight'>{processed_by}</span>:
+        <br><br>
+        <span class='highlight'>Vendor:</span> {vendor_name}<br>
+        <span class='highlight'>Invoice #:</span> {invoice_number}<br>
+        <span class='highlight'>Amount:</span> {amount} {currency}{bill_info}<br>
+        <span class='highlight'>Status:</span> Paid
+        <br><br>
+        Please log in to the APEX portal under <strong>Paid Payment Invoices</strong> to review and close the request.
+        """
+        return cls.send_email(
+            to_email=email,
+            subject=f"Payment Paid: Invoice {invoice_number} - {vendor_name}",
+            title="Payment Paid Notification",
+            name=username,
+            body=body
+        )
+
+    @classmethod
+    def send_ap_payment_processed_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, processed_by: str = "AP User", bill_number: str = None):
+        bill_info = f"<br><span class='highlight'>Bill #:</span> {bill_number}" if bill_number else ""
+        body = f"""
+        Payment status has been updated to <strong>Processed Payment</strong> for the following invoice by <span class='highlight'>{processed_by}</span>:
         <br><br>
         <span class='highlight'>Vendor:</span> {vendor_name}<br>
         <span class='highlight'>Invoice #:</span> {invoice_number}<br>
         <span class='highlight'>Amount:</span> {amount} {currency}{bill_info}<br>
         <span class='highlight'>Status:</span> Processed Payment
         <br><br>
-        Please log in to the APEX portal to review and close the request.
+        Please log in to the APEX portal to upload the payment attachment and mark the invoice as Paid.
         """
         return cls.send_email(
             to_email=email,
-            subject=f"Payment Processed: Invoice {invoice_number} - {vendor_name}",
-            title="Payment Processed Notification",
+            subject=f"Action Required: Upload Attachment & Mark Paid - Invoice {invoice_number} ({vendor_name})",
+            title="Payment Processed - Action Required",
             name=username,
             body=body
         )
@@ -712,6 +733,44 @@ class EmailService:
                 )
         except Exception as e:
             logger.error(f"[EmailService] Error notifying HOA user for payment processed invoice {invoice_id}: {e}")
+        finally:
+            db.close()
+
+    @classmethod
+    def notify_stage_ap_user_payment_processed(cls, invoice_id: int, processed_by: str = "AP User"):
+        """Notify all active AP Users that payment has been processed and payment attachment / marking as Paid is required."""
+        from common.database.database import SessionLocal
+        from common.models.db_models import User, Invoice
+
+        db = SessionLocal()
+        try:
+            invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+            if not invoice:
+                return
+
+            vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
+
+            # Find all active AP Users
+            users = db.query(User).filter(User.status == "active", User.role.isnot(None)).all()
+            target_ap_users = [
+                u for u in users
+                if u.email and (("ap" in (u.role or "").lower() and "approver" not in (u.role or "").lower()) or "coder" in (u.role or "").lower())
+            ]
+
+            logger.info(f"[EmailService] Sending payment processed action email for invoice {invoice_id} to {len(target_ap_users)} AP Users")
+            for ap_user in target_ap_users:
+                cls.send_ap_payment_processed_notification(
+                    email=ap_user.email.lower(),
+                    username=ap_user.username or "AP User",
+                    vendor_name=vendor_name,
+                    invoice_number=invoice_number,
+                    amount=amount,
+                    currency=currency,
+                    processed_by=processed_by,
+                    bill_number=invoice.sage_bill_number
+                )
+        except Exception as e:
+            logger.error(f"[EmailService] Error notifying AP users for payment processed invoice {invoice_id}: {e}")
         finally:
             db.close()
 

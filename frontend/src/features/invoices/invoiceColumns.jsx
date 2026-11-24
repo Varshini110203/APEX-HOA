@@ -23,6 +23,8 @@ const getStatusLabel = (value, level, row = null) => {
         sage_posted: `Posted to ${erp}`,
         sage_post_failed: `${erp} Post Failed`,
         processed_payment: "Processed Payment",
+        paid: "Paid",
+        paid_payment: "Paid",
         request_closed: "Request Closed",
         reworked: "Reworked",
         archived: "Archived",
@@ -51,6 +53,8 @@ const StatusBadge = ({ value, level, label }) => {
         sage_posted: "bg-emerald-100 text-emerald-700",
         sage_post_failed: "bg-red-100 text-red-700",
         processed_payment: "bg-indigo-100 text-indigo-700",
+        paid: "bg-blue-100 text-blue-700",
+        paid_payment: "bg-blue-100 text-blue-700",
         request_closed: "bg-teal-100 text-teal-700",
         reworked: "bg-rose-100 text-rose-700",
         archived: "bg-indigo-100 text-indigo-700",
@@ -71,7 +75,8 @@ const StatusBadge = ({ value, level, label }) => {
 export const getNextApprover = (row) => {
     const status = (row?.status || "").toLowerCase();
     if (status === 'request_closed' || status === 'approved') return "Completed";
-    if (status === 'processed_payment') return "HOA User";
+    if (status === 'paid' || status === 'paid_payment') return "HOA User";
+    if (status === 'processed_payment') return "AP User";
     if (status === 'sage_posted') return "AP User";
     if (status === 'rejected') return "Rejected";
     if (status === 'waiting_hoa_approval') return "HOA Approver";
@@ -131,7 +136,7 @@ const actionsCol = (onView, onDelete, onArchive, userRole, openingInvoiceId, hid
         const allowedRoles = ["scanner", "coder", "admin", "hoa user", "ap user", "ar user"];
         const currentRole = userRole?.toLowerCase();
         const isUserOrScanner = allowedRoles.includes(currentRole) || (currentRole && currentRole.includes('user'));
-        const nonDeletableStatuses = ['sage_posted', 'processed_payment', 'request_closed'];
+        const nonDeletableStatuses = ['sage_posted', 'processed_payment', 'paid', 'paid_payment', 'request_closed'];
         const canDelete = isUserOrScanner && !nonDeletableStatuses.includes(row.status) && !hideDelete;
         const isOpening = openingInvoiceId != null && String(openingInvoiceId) === String(row?.id);
         const canArchive = isUserOrScanner && row.status === 'request_closed';

@@ -110,10 +110,19 @@ const workflowActionsAPI = {
         API.post(`${BASE}/process-payment/${invoiceId}`, payload).then((res) => res.data),
 
     /**
+     * POST /workflow/action/mark-paid/{invoiceId}
+     * Body: { comment?: string }
+     *
+     * AP User only. Changes status from processed_payment to paid.
+     */
+    markPaid: (invoiceId, payload = {}) =>
+        API.post(`${BASE}/mark-paid/${invoiceId}`, payload).then((res) => res.data),
+
+    /**
      * POST /workflow/action/close-request/{invoiceId}
      * Body: { comment?: string }
      *
-     * HOA User only. Changes status from processed_payment to request_closed.
+     * HOA User only. Changes status from paid to request_closed.
      */
     closeRequest: (invoiceId, payload = {}) =>
         API.post(`${BASE}/close-request/${invoiceId}`, payload).then((res) => res.data),

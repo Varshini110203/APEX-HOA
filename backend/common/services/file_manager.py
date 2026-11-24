@@ -16,6 +16,8 @@ SUBFOLDERS = {
     "non_invoices": "non_invoice",
     "payment_processed": "payment_processed",
     "processed_payment": "payment_processed",
+    "paid_payment": "paid_payment",
+    "paid": "paid_payment",
     "request_closed": "request_closed"
 }
 
@@ -112,10 +114,12 @@ def move_invoice_file(current_path: str, target_category: str) -> Optional[str]:
                 "posted_to_sage",
                 "posted_to_zoho",
                 "payment_processed",
+                "paid_payment",
                 "request_closed",
                 "posted_to_sage_files",
                 "posted_to_zoho_files",
                 "payment_processed_files",
+                "paid_payment_files",
                 "request_closed_files",
                 "read",
                 "unread"

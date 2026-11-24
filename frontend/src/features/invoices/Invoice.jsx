@@ -172,7 +172,7 @@ const Invoice = () => {
                 const status = (data.status || "").toLowerCase();
                 const role = (useAuthStore.getState().activeRole || useAuthStore.getState().user?.role || currentRole || '').toLowerCase();
                 const isHoaUserOrApprover = role.includes("hoa");
-                if (["processed", "sage_posted", "processed_payment", "request_closed"].includes(status) || isHoaUserOrApprover) setInvoiceActiveTab("Quick View");
+                if (["processed", "sage_posted", "processed_payment", "paid", "paid_payment", "request_closed"].includes(status) || isHoaUserOrApprover) setInvoiceActiveTab("Quick View");
                 else setInvoiceActiveTab("Coding");
             } finally {
                 setIsPreviewLoading(false);
@@ -469,6 +469,7 @@ const Invoice = () => {
                                 { key: "in_progress", label: "In Progress Invoices" },
                                 { key: "posted_stage", label: `Posted To ${getERPSystem()} Invoices` },
                                 { key: "processed_payment", label: "Processed Payment Invoices" },
+                                { key: "paid_payment", label: "Paid Payment Invoices" },
                                 { key: "request_closed", label: "Request Closed Invoices" },
                                 { key: "delete", label: "Deleted Invoices" },
                                 { key: "archive", label: "Archived Invoices" },

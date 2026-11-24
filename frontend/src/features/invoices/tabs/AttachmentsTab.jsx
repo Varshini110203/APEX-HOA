@@ -48,7 +48,8 @@ const AttachmentsTab = () => {
     const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder")) && !isHoaRole;
     const isApproverRole = roleClean.includes("approver");
 
-    const isAdmin = roleClean === "admin";
+    const isAdmin = roleClean === "admin" || roleClean.split(/[\s,_]+/).includes("admin");
+    const isArUser = roleClean.split(/[\s,_]+/).includes("ar") || roleClean.includes("ar user") || roleClean.includes("ar_user");
     const isHoaApprover = isHoaRole && isApproverRole;
     const isHoaUser = isHoaRole && !isApproverRole;
     const isApApprover = isApRole && isApproverRole;
@@ -73,8 +74,8 @@ const AttachmentsTab = () => {
         if (activeInvoiceData?.is_archived) return false;
         if (["deleted"].includes(status)) return false;
 
-        // Admin can always see the button
-        if (isAdmin) return true;
+        // Never show Add Attachment button to Admin and AR User at any stage
+        if (isAdmin || isArUser) return false;
 
         // If HOA User's step is over, do not show the button
         if (isHoaUser) {
@@ -111,6 +112,7 @@ const AttachmentsTab = () => {
         activeInvoiceData?.is_archived,
         status,
         isAdmin,
+        isArUser,
         isHoaUser,
         isHoaUserStepActive,
         isApUser,
@@ -127,8 +129,8 @@ const AttachmentsTab = () => {
     const canAddAttachment = useMemo(() => {
         if (!showAddButton) return false;
 
-        // Admin can always add attachments
-        if (isAdmin) return true;
+        // Never allow Admin and AR User to add attachments at any stage
+        if (isAdmin || isArUser) return false;
 
         // HOA Approver and AP Approver:
         // Enabled ONLY if they click the "Enable Editing" button
@@ -151,6 +153,7 @@ const AttachmentsTab = () => {
     }, [
         showAddButton,
         isAdmin,
+        isArUser,
         isHoaApprover,
         isApApprover,
         isApproverRole,
@@ -432,7 +435,7 @@ const AttachmentsTab = () => {
                         Attachments ({attachments.length})
                     </span>
                 </div>
-                {showAddButton && (
+                {showAddButton && !isAdmin && !isArUser && (
                     <button
                         onClick={() => {
                             if (canAddAttachment) setIsUploadModalOpen(true);

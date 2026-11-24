@@ -29,6 +29,8 @@ ACTIONABLE_STATUSES = [
     InvoiceStatusEnum.REWORKED,
     InvoiceStatusEnum.SAGE_POSTED,
     InvoiceStatusEnum.PROCESSED_PAYMENT,
+    InvoiceStatusEnum.PAID,
+    InvoiceStatusEnum.PAID_PAYMENT,
     InvoiceStatusEnum.SAGE_POST_FAILED,
 ]
 
@@ -252,8 +254,25 @@ def _get_workflow_recipients_for_invoice(
             "Payment Processing Reminder"
         )
 
-    # 7. PROCESSED PAYMENT -> HOA User to close request
+    # 7. PROCESSED PAYMENT -> AP User to add attachment and mark paid
     elif status_clean == "processed_payment":
+        recipients_map = {}
+        active_users = db.query(User).filter(User.status == "active", User.role.isnot(None)).all()
+        for u in active_users:
+            role_str = (u.role or "").lower().replace("_", " ")
+            roles = [r.strip() for r in role_str.split(",")]
+            if any("ap" in r.split() and "approver" not in r for r in roles) or "ap user" in roles:
+                recipients_map[u.email.lower()] = u.username or "AP User"
+        recipients = list(recipients_map.items())
+        return (
+            recipients,
+            "Payment Processed / Pending Paid Confirmation",
+            "Upload payment attachment and mark invoice as paid",
+            "Payment Paid Confirmation Reminder"
+        )
+
+    # 8. PAID -> HOA User to close request
+    elif status_clean in ("paid", "paid_payment"):
         recipients = []
         if invoice.uploaded_by:
             uploader = db.query(User).filter(
@@ -272,8 +291,8 @@ def _get_workflow_recipients_for_invoice(
             ]
         return (
             recipients,
-            "Payment Processed / Pending Request Closure",
-            "Review payment confirmation and close invoice request",
+            "Paid / Pending Request Closure",
+            "Review paid invoice and close request",
             "Request Closure Reminder"
         )
 

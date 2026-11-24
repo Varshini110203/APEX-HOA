@@ -28,6 +28,7 @@ const MODAL_ACTIONS = {
     "repost-sage": { label: "Repost to Sage", okText: "Repost", danger: false },
     recall: { label: "Recall Invoice", okText: "Recall", danger: true },
     "process-payment": { label: "Processed Payment", okText: "Processed Payment", danger: false },
+    "mark-paid": { label: "Mark as Paid", okText: "Paid", danger: false },
     "close-request": { label: "Request Closed", okText: "Request Closed", danger: false },
 };
 
@@ -506,6 +507,9 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                 case "process-payment":
                     result = await workflowActionsAPI.processPayment(viewInvoiceId, actionPayload);
                     break;
+                case "mark-paid":
+                    result = await workflowActionsAPI.markPaid(viewInvoiceId, actionPayload);
+                    break;
                 case "close-request":
                     result = await workflowActionsAPI.closeRequest(viewInvoiceId, actionPayload);
                     break;
@@ -537,7 +541,7 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                 return;
             }
 
-            if (action === "process-payment" || action === "close-request") {
+            if (action === "process-payment" || action === "mark-paid" || action === "close-request") {
                 setInvoiceSection(1);
                 navigate("/invoices");
                 return;
@@ -601,7 +605,8 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
     const isApRole = (roleClean.split(/\s+/).includes("ap") || roleClean.includes("coder")) && !isHoaRole;
     const isApproverRole = roleClean.includes("approver");
 
-    const isAdmin = roleClean === "admin";
+    const isAdmin = roleClean === "admin" || roleClean.split(/[\s,_]+/).includes("admin");
+    const isArUser = roleClean.split(/[\s,_]+/).includes("ar") || roleClean.includes("ar user") || roleClean.includes("ar_user");
     const isHoaApprover = isHoaRole && isApproverRole;
     const isHoaUser = isHoaRole && !isApproverRole;
     const isApApprover = isApRole && isApproverRole;
@@ -649,41 +654,47 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
 
                 {/* Right — Action buttons */}
                 <div className="flex items-center gap-3">
-                    {["rejected", "sage_posted", "processed_payment", "request_closed", "deleted", "archived"].includes((currentStatus || "").toLowerCase()) && (
+                    {["rejected", "sage_posted", "processed_payment", "paid", "paid_payment", "request_closed", "deleted", "archived"].includes((currentStatus || "").toLowerCase()) && (
                         <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border shadow-sm ${
                             (currentStatus || "").toLowerCase() === "sage_posted"
                                 ? "bg-emerald-50 border-emerald-200 text-emerald-700"
                                 : (currentStatus || "").toLowerCase() === "processed_payment"
                                     ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-                                    : (currentStatus || "").toLowerCase() === "request_closed"
-                                        ? "bg-teal-50 border-teal-200 text-teal-700"
-                                        : (currentStatus || "").toLowerCase() === "archived"
-                                            ? "bg-blue-50 border-blue-200 text-blue-700"
-                                            : "bg-red-50 border-red-200 text-red-700"
+                                    : (currentStatus || "").toLowerCase() === "paid" || (currentStatus || "").toLowerCase() === "paid_payment"
+                                        ? "bg-blue-50 border-blue-200 text-blue-700"
+                                        : (currentStatus || "").toLowerCase() === "request_closed"
+                                            ? "bg-teal-50 border-teal-200 text-teal-700"
+                                            : (currentStatus || "").toLowerCase() === "archived"
+                                                ? "bg-blue-50 border-blue-200 text-blue-700"
+                                                : "bg-red-50 border-red-200 text-red-700"
                             }`}>
                             <div className={`w-2 h-2 rounded-full ${
                                 (currentStatus || "").toLowerCase() === "sage_posted"
                                     ? "bg-emerald-500"
                                     : (currentStatus || "").toLowerCase() === "processed_payment"
                                         ? "bg-indigo-500"
-                                        : (currentStatus || "").toLowerCase() === "request_closed"
-                                            ? "bg-teal-500"
-                                            : (currentStatus || "").toLowerCase() === "archived"
-                                                ? "bg-blue-500"
-                                                : "bg-red-500"
+                                        : (currentStatus || "").toLowerCase() === "paid" || (currentStatus || "").toLowerCase() === "paid_payment"
+                                            ? "bg-blue-500"
+                                            : (currentStatus || "").toLowerCase() === "request_closed"
+                                                ? "bg-teal-500"
+                                                : (currentStatus || "").toLowerCase() === "archived"
+                                                    ? "bg-blue-500"
+                                                    : "bg-red-500"
                             }`} />
                             <span className="text-[11px] font-bold uppercase tracking-wider custom-font-creato leading-none">
                                 {(currentStatus || "").toLowerCase() === "sage_posted"
                                     ? `Posted to ${getERPSystem()}`
                                     : (currentStatus || "").toLowerCase() === "processed_payment"
                                         ? "Processed Payment"
-                                        : (currentStatus || "").toLowerCase() === "request_closed"
-                                            ? "Request Closed"
-                                            : (currentStatus || "").toLowerCase() === "rejected"
-                                                ? "Rejected"
-                                                : (currentStatus || "").toLowerCase() === "archived"
-                                                    ? "Archived"
-                                                    : "Deleted"}
+                                        : (currentStatus || "").toLowerCase() === "paid" || (currentStatus || "").toLowerCase() === "paid_payment"
+                                            ? "Paid"
+                                            : (currentStatus || "").toLowerCase() === "request_closed"
+                                                ? "Request Closed"
+                                                : (currentStatus || "").toLowerCase() === "rejected"
+                                                    ? "Rejected"
+                                                    : (currentStatus || "").toLowerCase() === "archived"
+                                                        ? "Archived"
+                                                        : "Deleted"}
                             </span>
                         </div>
                     )}
@@ -773,33 +784,49 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                                 </>
                             )}
 
-                            {/* ── AP User buttons (when invoice is posted to Sage) ───────── */}
+                            {/* ── AP User buttons (when invoice is posted to Sage - Step 1: Processed Payment) ───────── */}
                             {(isApUser || isAdmin) && currentStatus === "sage_posted" && (
+                                <div className="w-[160px]">
+                                    <CustomButton
+                                        variant="success"
+                                        height="h-[34px]"
+                                        disabled={!!actionLoading}
+                                        onClick={() => openModal("process-payment")}
+                                    >
+                                        {busy("process-payment") ? "Processing..." : "Processed Payment"}
+                                    </CustomButton>
+                                </div>
+                            )}
+
+                            {/* ── AP User buttons (when invoice payment is processed - Step 2: Add Attachment & Paid) ─────── */}
+                            {(isApUser || isAdmin) && currentStatus === "processed_payment" && (
                                 <>
-                                    <div className="w-[140px]">
-                                        <CustomButton
-                                            variant="outline"
-                                            height="h-[34px]"
-                                            onClick={() => setIsAttachmentModalOpen(true)}
-                                        >
-                                            Add Attachment
-                                        </CustomButton>
-                                    </div>
+                                    {!isAdmin && !isArUser && (
+                                        <div className="w-[140px]">
+                                            <CustomButton
+                                                variant="outline"
+                                                height="h-[34px]"
+                                                onClick={() => setIsAttachmentModalOpen(true)}
+                                            >
+                                                Add Attachment
+                                            </CustomButton>
+                                        </div>
+                                    )}
                                     <div className="w-[150px]">
                                         <CustomButton
                                             variant="success"
                                             height="h-[34px]"
                                             disabled={!!actionLoading}
-                                            onClick={() => openModal("process-payment")}
+                                            onClick={() => openModal("mark-paid")}
                                         >
-                                            {busy("process-payment") ? "Processing..." : "Processed Payment"}
+                                            {busy("mark-paid") ? "Saving..." : "Paid"}
                                         </CustomButton>
                                     </div>
                                 </>
                             )}
 
-                            {/* ── HOA User buttons (when invoice payment is processed) ─────── */}
-                            {(isHoaUser || isAdmin) && currentStatus === "processed_payment" && (
+                            {/* ── HOA User buttons (when invoice is paid - Step 3: Request Closed) ─────── */}
+                            {(isHoaUser || isAdmin) && (currentStatus === "paid" || currentStatus === "paid_payment") && (
                                 <div className="w-[150px]">
                                     <CustomButton
                                         variant="success"
@@ -997,7 +1024,12 @@ const InvoiceTopBar = ({ invoice = {}, isPdfVisible, onTogglePdf }) => {
                         )}
                         {modal.action === "process-payment" && (
                             <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
-                                This invoice will be marked as <strong>Processed Payment</strong> and a notification email will be sent to the HOA User.
+                                This invoice will be marked as <strong>Processed Payment</strong> and a notification email will be sent to the AP User to attach proof and mark as Paid.
+                            </div>
+                        )}
+                        {modal.action === "mark-paid" && (
+                            <div className="rounded-lg bg-indigo-50 border border-indigo-200 px-4 py-3 text-sm text-indigo-700">
+                                This invoice will be marked as <strong>Paid</strong> and moved to <strong>Paid Payment Invoices</strong> for HOA User closure.
                             </div>
                         )}
                         {modal.action === "close-request" && (

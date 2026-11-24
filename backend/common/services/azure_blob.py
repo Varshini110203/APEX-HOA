@@ -103,10 +103,12 @@ def find_blob_client(file_path: str):
         "posted_to_sage",
         "posted_to_zoho",
         "payment_processed",
+        "paid_payment",
         "request_closed",
         "posted_to_sage_files",
         "posted_to_zoho_files",
         "payment_processed_files",
+        "paid_payment_files",
         "request_closed_files",
         "read",
         "unread"
@@ -145,6 +147,7 @@ def ensure_container_and_folders() -> None:
             "non_invoice",
             f"posted_to_{TOOL}",
             "payment_processed",
+            "paid_payment",
             "request_closed"
         ]
         

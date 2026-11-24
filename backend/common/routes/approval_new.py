@@ -65,6 +65,8 @@ class InvoiceStatus:
     SAGE_POSTED = "sage_posted"
     SAGE_POST_FAILED = "sage_post_failed"
     PROCESSED_PAYMENT = "processed_payment"
+    PAID = "paid"
+    PAID_PAYMENT = "paid_payment"
     REQUEST_CLOSED = "request_closed"
     ARCHIVED = "archived"
 
@@ -83,6 +85,8 @@ class StepType:
     POSTING_APPROVED = "posting_approved"
     RECALLED = "recalled"
     PROCESSED_PAYMENT = "processed_payment"
+    PAID = "paid"
+    PAID_PAYMENT = "paid_payment"
     REQUEST_CLOSED = "request_closed"
 
 
@@ -421,6 +425,16 @@ def _update_invoice_status(db: Session, invoice: Invoice, new_status: str):
                 logger.info(f"Moved invoice {invoice.id} PDF to payment_processed folder: {new_path}")
         except Exception as e:
             logger.error(f"Failed to move invoice {invoice.id} PDF on status change to PROCESSED_PAYMENT: {e}", exc_info=True)
+    elif new_status in (InvoiceStatus.PAID, "paid", "paid_payment"):
+        try:
+            from common.services.file_manager import move_invoice_file
+            new_path = move_invoice_file(invoice.file_path, "paid_payment")
+            if new_path:
+                invoice.file_path = new_path
+                db.add(invoice)
+                logger.info(f"Moved invoice {invoice.id} PDF to paid_payment folder: {new_path}")
+        except Exception as e:
+            logger.error(f"Failed to move invoice {invoice.id} PDF on status change to PAID: {e}", exc_info=True)
     elif new_status == InvoiceStatus.REQUEST_CLOSED:
         try:
             from common.services.file_manager import move_invoice_file
@@ -693,11 +707,19 @@ async def _finalize_and_post(
             comment=f"{erp_name} Bill Number: {actual_bill_no}",
             entity=entity,
         )
-        # Add queue for AP User and HOA User after successful post to Sage
+        # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
         _record_step(
             db, invoice_id,
             step_name="AP User Queue",
             step_type="ap_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
+        _record_step(
+            db, invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_paid_queue",
             user_email=email,
             status="queued",
             entity=entity,
@@ -1688,11 +1710,19 @@ async def approve_invoice(
                 comment=f"{erp_name} Bill Number: {sage_result.get('sage_bill_number')}",
                 entity=entity,
             )
-            # Add queue for AP User and HOA User after successful post to Sage
+            # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
             _record_step(
                 db, invoice_id,
                 step_name="AP User Queue",
                 step_type="ap_user_queue",
+                user_email=email,
+                status="queued",
+                entity=entity,
+            )
+            _record_step(
+                db, invoice_id,
+                step_name="AP User Queue",
+                step_type="ap_user_paid_queue",
                 user_email=email,
                 status="queued",
                 entity=entity,
@@ -2119,11 +2149,19 @@ async def approve_invoice(
                     comment=f"{erp_name} Bill Number: {sage_result.get('sage_bill_number')}",
                     entity=entity,
                 )
-                # Add queue for AP User and HOA User after successful post to Sage
+                # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
                 _record_step(
                     db, invoice_id,
                     step_name="AP User Queue",
                     step_type="ap_user_queue",
+                    user_email=email,
+                    status="queued",
+                    entity=entity,
+                )
+                _record_step(
+                    db, invoice_id,
+                    step_name="AP User Queue",
+                    step_type="ap_user_paid_queue",
                     user_email=email,
                     status="queued",
                     entity=entity,
@@ -2951,12 +2989,21 @@ async def repost_to_sage(
             },
             sage_bill_number=resolved_bill_number
         )
-        # Add queue for AP User and HOA User after successful post to Sage
+        # Add queue for AP User (Processed Payment), AP User (Paid), and HOA User (Request Closed) after successful post to Sage
         _record_step(
             db,
             invoice_id,
             step_name="AP User Queue",
             step_type="ap_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity,
+        )
+        _record_step(
+            db,
+            invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_paid_queue",
             user_email=email,
             status="queued",
             entity=entity,
@@ -3148,7 +3195,7 @@ async def process_payment(
             WorkflowStep.step_name.ilike("%ap user queue%")
         ),
         WorkflowStep.status == "queued"
-    ).order_by(WorkflowStep.id.desc()).first()
+    ).order_by(WorkflowStep.id.asc()).first()
 
     if ap_queue_step:
         ap_queue_step.status = "completed"
@@ -3164,6 +3211,25 @@ async def process_payment(
             user_email=email,
             status="completed",
             comment=comment,
+            entity=entity
+        )
+
+    # Ensure second AP User Queue step (for Paid) exists and is queued
+    second_ap_step = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_type == "ap_user_paid_queue",
+            WorkflowStep.step_name.ilike("%paid%")
+        ),
+        WorkflowStep.status == "queued"
+    ).first()
+    if not second_ap_step:
+        _record_step(
+            db, invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_paid_queue",
+            user_email=email,
+            status="queued",
             entity=entity
         )
 
@@ -3188,6 +3254,134 @@ async def process_payment(
 
     db.commit()
 
+    # Trigger notification email to AP User to upload attachment and mark as paid
+    if background_tasks:
+        background_tasks.add_task(
+            email_service.notify_stage_ap_user_payment_processed,
+            invoice_id=invoice_id,
+            processed_by=actor_name
+        )
+    else:
+        email_service.notify_stage_ap_user_payment_processed(
+            invoice_id=invoice_id,
+            processed_by=actor_name
+        )
+
+    logger.info(f"[ProcessPayment] Invoice {invoice_id} marked as processed payment by {actor_name}")
+    return ActionResponse(
+        success=True,
+        message="Payment processed successfully. Notification sent to AP User to upload attachment and mark as paid.",
+        new_status=InvoiceStatus.PROCESSED_PAYMENT
+    )
+
+
+@router.post("/mark-paid/{invoice_id}", response_model=ActionResponse)
+@router.post("/paid-payment/{invoice_id}", response_model=ActionResponse)
+async def mark_paid(
+    invoice_id: int,
+    payload: ActionRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: UserResponse = Depends(get_current_user),
+    entity: str = Depends(get_current_entity),
+):
+    invoice = invoice_repo.get(db, invoice_id)
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+
+    _check_concurrency(db, invoice, payload.last_updated_at, current_user)
+
+    current_status = (
+        invoice.status.value
+        if hasattr(invoice.status, "value")
+        else str(invoice.status)
+    )
+
+    if current_status != InvoiceStatus.PROCESSED_PAYMENT:
+        raise HTTPException(400, f"Invoice cannot be marked as paid from status '{current_status}'. Must be '{InvoiceStatus.PROCESSED_PAYMENT}'")
+
+    user_role_lower = (current_user.role or "").lower()
+    is_admin = user_role_lower == "admin"
+    is_ap_user = ("ap" in user_role_lower or "coder" in user_role_lower) and "hoa" not in user_role_lower and "approver" not in user_role_lower
+
+    if not (is_admin or is_ap_user):
+        raise HTTPException(403, "Only AP Users are authorized to mark payment as paid")
+
+    email = current_user.email.lower()
+    comment = payload.comment or "Paid Payment"
+    actor_name = current_user.username or (email.split("@")[0] if "@" in email else email)
+
+    # Update invoice status
+    _update_invoice_status(db, invoice, InvoiceStatus.PAID)
+
+    # Complete AP User Paid step
+    ap_paid_step = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_type == "ap_user_paid_queue",
+            WorkflowStep.step_type == "ap_user_queue",
+            WorkflowStep.step_name.ilike("%paid%"),
+            WorkflowStep.step_name.ilike("%ap user queue%")
+        ),
+        WorkflowStep.status == "queued"
+    ).order_by(WorkflowStep.id.asc()).first()
+
+    if ap_paid_step:
+        ap_paid_step.status = "completed"
+        ap_paid_step.user = actor_name
+        ap_paid_step.timestamp = get_ist_now()
+        ap_paid_step.comment = comment
+        db.add(ap_paid_step)
+    else:
+        _record_step(
+            db, invoice_id,
+            step_name="AP User Queue",
+            step_type="ap_user_paid_queue",
+            user_email=email,
+            status="completed",
+            comment=comment,
+            entity=entity
+        )
+
+    # Ensure HOA queue step exists
+    hoa_queue_step = db.query(WorkflowStep).filter(
+        WorkflowStep.invoice_id == invoice_id,
+        or_(
+            WorkflowStep.step_type == "hoa_user_queue",
+            WorkflowStep.step_name.ilike("%hoa user queue%")
+        )
+    ).first()
+    if not hoa_queue_step:
+        _record_step(
+            db, invoice_id,
+            step_name="HOA User Queue",
+            step_type="hoa_user_queue",
+            user_email=email,
+            status="queued",
+            entity=entity
+        )
+
+    # Log to audit trail
+    await audit_service.log_action(
+        db=db,
+        invoice_id=invoice_id,
+        action=AuditAction.PAID_PAYMENT.value,
+        user=actor_name,
+        entity=entity,
+        details={"comment": comment}
+    )
+
+    # Add to status history
+    db.add(InvoiceStatusHistory(
+        invoice_id=invoice_id,
+        status=InvoiceStatus.PAID,
+        user=actor_name,
+        timestamp=get_ist_now(),
+        comment=comment
+    ))
+
+    db.commit()
+
     # Trigger notification email to HOA User
     if background_tasks:
         background_tasks.add_task(
@@ -3201,11 +3395,11 @@ async def process_payment(
             processed_by=actor_name
         )
 
-    logger.info(f"[ProcessPayment] Invoice {invoice_id} marked as processed payment by {actor_name}")
+    logger.info(f"[MarkPaid] Invoice {invoice_id} marked as paid by {actor_name}")
     return ActionResponse(
         success=True,
-        message="Payment processed successfully. Notification sent to HOA User.",
-        new_status=InvoiceStatus.PROCESSED_PAYMENT
+        message="Payment marked as paid successfully. Notification sent to HOA User.",
+        new_status=InvoiceStatus.PAID
     )
 
 
@@ -3229,8 +3423,8 @@ async def close_request(
         else str(invoice.status)
     )
 
-    if current_status != InvoiceStatus.PROCESSED_PAYMENT:
-        raise HTTPException(400, f"Invoice cannot be closed from status '{current_status}'. Must be '{InvoiceStatus.PROCESSED_PAYMENT}'")
+    if current_status not in (InvoiceStatus.PAID, "paid", "paid_payment"):
+        raise HTTPException(400, f"Invoice cannot be closed from status '{current_status}'. Must be '{InvoiceStatus.PAID}'")
 
     user_role_lower = (current_user.role or "").lower()
     is_admin = user_role_lower == "admin"

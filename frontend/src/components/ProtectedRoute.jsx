@@ -46,6 +46,11 @@ const ProtectedRoute = () => {
         if (currentPath === '/dashboard' && userActiveRole.includes('approver') && userDept === 'non-finance') {
             return <Navigate to="/invoices" replace />;
         }
+
+        // Do not allow HOA user or HOA approver to access master-data or settings route
+        if ((currentPath.startsWith('/master-data') || currentPath.startsWith('/settings')) && userActiveRole.includes('hoa')) {
+            return <Navigate to="/invoices" replace />;
+        }
         
         // Find if this path requires specific roles
         const navItem = navigation.find(nav => 
@@ -58,7 +63,9 @@ const ProtectedRoute = () => {
                 r.toLowerCase() === 'all' || r.toLowerCase() === userActiveRole
             );
 
-            if ((navItem.path === '/master-data' || navItem.path === '/settings') && (userActiveRole === 'scanner' || userActiveRole === 'coder' || userActiveRole.includes('user'))) {
+            if ((navItem.path === '/master-data' || navItem.path === '/settings') && userActiveRole.includes('hoa')) {
+                hasAccess = false;
+            } else if ((navItem.path === '/master-data' || navItem.path === '/settings') && (userActiveRole === 'scanner' || userActiveRole === 'coder' || userActiveRole.includes('user'))) {
                 hasAccess = true;
             }
 

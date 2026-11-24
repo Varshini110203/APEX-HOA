@@ -20,6 +20,7 @@ class AuditAction(str, Enum):
     SAGE_REPOSTED = "Sage Reposted"
     SAGE_REPOST_FAILED = "Sage Repost Failed"
     PROCESSED_PAYMENT = "Processed Payment"
+    PAID_PAYMENT = "Paid Payment"
     REQUEST_CLOSED = "Request Closed"
     ARCHIVED = "Archived"
     DELETED = "Deleted"
