@@ -2977,7 +2977,15 @@ async def update_invoice_status(
                 sage_location = raw_entity if raw_entity.upper() != "DEFAULT" else ""
 
                 # Compute the intended bill number upfront (matches what postapbill.py sends to Sage)
-                intended_bill_no = f"{inv.invoice_number}-{inv.id}"
+                intended_bill_no = getattr(inv, "request_id", None)
+                # if not intended_bill_no and inv.extracted_data:
+                #     try:
+                #         _ed = json.loads(inv.extracted_data) if isinstance(inv.extracted_data, str) else (inv.extracted_data or {})
+                #         intended_bill_no = _ed.get("invoice_details", {}).get("request_id", {}).get("value")
+                #     except Exception:
+                #         pass
+                # if not intended_bill_no:
+                #     intended_bill_no = f"{inv.invoice_number}-{inv.id}"
 
                 post_result = post_ap_bill(
                     inv, 
@@ -3191,7 +3199,15 @@ async def repost_to_sage(
         sage_location = raw_entity if raw_entity.upper() != "DEFAULT" else ""
 
         # Compute the intended bill number upfront (matches what postapbill.py sends to Sage)
-        intended_bill_no = f"{invoice.invoice_number}-{invoice.id}"
+        intended_bill_no = getattr(invoice, "request_id", None)
+        if not intended_bill_no and invoice.extracted_data:
+            try:
+                _ed = json.loads(invoice.extracted_data) if isinstance(invoice.extracted_data, str) else (invoice.extracted_data or {})
+                intended_bill_no = _ed.get("invoice_details", {}).get("request_id", {}).get("value")
+            except Exception:
+                pass
+        if not intended_bill_no:
+            intended_bill_no = f"{invoice.invoice_number}-{invoice.id}"
 
         # 4. Call Sage Posting Logic
         from common.utils.erp_locator import get_erp_function

@@ -859,8 +859,16 @@ async def _post_to_sage(invoice_id: int, entity: str, db: Session) -> Dict:
 
         if post_result and post_result.get("success"):
             sage_response = post_result.get("data", {})
-            # User requested Sage bill number to be same as invoice number
-            intended_bill_no = f"{invoice.invoice_number}"
+            # Bill number sent to Sage is request_id
+            intended_bill_no = getattr(invoice, "request_id", None)
+            # if not intended_bill_no and invoice.extracted_data:
+            #     try:
+            #         _ed = json.loads(invoice.extracted_data) if isinstance(invoice.extracted_data, str) else (invoice.extracted_data or {})
+            #         intended_bill_no = _ed.get("invoice_details", {}).get("request_id", {}).get("value")
+            #     except Exception:
+            #         pass
+            # if not intended_bill_no:
+            #     intended_bill_no = f"{invoice.invoice_number}"
             sage_bill_no = sage_response.get("billNumber") or intended_bill_no
             erp_name = settings.TOOL.capitalize()
             return {
@@ -2954,10 +2962,16 @@ async def repost_to_sage(
     sage_result = await _post_to_sage(invoice_id, entity, db)
 
     if sage_result["success"]:
-        # The bill number sent to Sage is always invoice.invoice_number.
-        # It must NEVER change on repost — use invoice_number as the
-        # single source of truth regardless of what Sage echoes back.
-        resolved_bill_number = invoice.request_id
+        # The bill number sent to Sage is always invoice.request_id.
+        resolved_bill_number = getattr(invoice, "request_id", None)
+        # if not resolved_bill_number and invoice.extracted_data:
+        #     try:
+        #         _ed = json.loads(invoice.extracted_data) if isinstance(invoice.extracted_data, str) else (invoice.extracted_data or {})
+        #         resolved_bill_number = _ed.get("invoice_details", {}).get("request_id", {}).get("value")
+        #     except Exception:
+        #         pass
+        # if not resolved_bill_number:
+        #     resolved_bill_number = f"{invoice.invoice_number}"
 
         erp_name = settings.TOOL.capitalize()
         logger.info(
