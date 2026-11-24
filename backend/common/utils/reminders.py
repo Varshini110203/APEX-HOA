@@ -217,34 +217,21 @@ def _get_workflow_recipients_for_invoice(
                 "AP Rework Reminder"
             )
 
-    # 6. SAGE POSTED -> AP User & AR User
+    # 6. SAGE POSTED -> All AP Users & AR Users
     elif status_clean == "sage_posted":
         recipients_map = {}
-        # AP User (Coder)
-        coding_step = db.query(WorkflowStep).filter(
-            WorkflowStep.invoice_id == invoice.id,
-            WorkflowStep.step_type.in_(["coding", "ap_coded"])
-        ).order_by(WorkflowStep.timestamp.desc()).first()
-        if coding_step and coding_step.user:
-            coder = db.query(User).filter(
-                (User.username == coding_step.user) | (User.email == coding_step.user)
-            ).first()
-            if coder and coder.email:
-                recipients_map[coder.email.lower()] = coder.username or "AP User"
-            elif "@" in coding_step.user:
-                recipients_map[coding_step.user.lower()] = coding_step.user
-
-        # AR Users
         active_users = db.query(User).filter(User.status == "active", User.role.isnot(None)).all()
         for u in active_users:
             if not u.email:
                 continue
             role_str = (u.role or "").lower().replace("_", " ")
             roles = [r.strip() for r in role_str.split(",")]
-            if any(r in ["ar user", "ar"] or ("ar" in r.split() and "approver" not in r) for r in roles):
-                recipients_map[u.email.lower()] = u.username or "AR User"
-            elif not recipients_map and ("ap" in role_str and "approver" not in role_str):
+            # All active AP Users (who can process payment)
+            if any(r in ["ap user", "ap", "coder"] or ("ap" in r.split() and "approver" not in r) for r in roles):
                 recipients_map[u.email.lower()] = u.username or "AP User"
+            # All active AR Users
+            elif any(r in ["ar user", "ar"] or ("ar" in r.split() and "approver" not in r) for r in roles):
+                recipients_map[u.email.lower()] = u.username or "AR User"
 
         recipients = list(recipients_map.items())
         return (

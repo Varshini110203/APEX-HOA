@@ -339,6 +339,30 @@ class EmailService:
         )
 
     @classmethod
+    def send_ap_invoice_posted_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, approved_by: str = "AP Approver", bill_number: str = None):
+        from common.config.settings import settings
+        erp_name = settings.TOOL.capitalize()
+        bill_info = f"<br><span class='highlight'>{erp_name} Bill #:</span> {bill_number}" if bill_number else ""
+        body = f"""
+        The following invoice has been approved by AP Approver <span class='highlight'>{approved_by}</span> and posted to {erp_name}:
+        <br><br>
+        <span class='highlight'>Vendor:</span> {vendor_name}<br>
+        <span class='highlight'>Invoice #:</span> {invoice_number}<br>
+        <span class='highlight'>Amount:</span> {amount} {currency}{bill_info}<br>
+        <span class='highlight'>Status:</span> Approved & Posted to {erp_name}<br>
+        <span class='highlight'>Action Required:</span> Mark invoice as Processed Payment
+        <br><br>
+        Please log in to the APEX portal to review and mark the invoice as <strong>Processed Payment</strong>.
+        """
+        return cls.send_email(
+            to_email=email,
+            subject=f"Action Required: Mark Payment Processed - Invoice {invoice_number} ({vendor_name})",
+            title=f"Invoice Posted to {erp_name} - Action Required",
+            name=username,
+            body=body
+        )
+
+    @classmethod
     def send_payment_processed_notification(cls, email: str, username: str, vendor_name: str, invoice_number: str, amount: str, currency: str, processed_by: str = "AP User", bill_number: str = None):
         bill_info = f"<br><span class='highlight'>Bill #:</span> {bill_number}" if bill_number else ""
         body = f"""
@@ -546,9 +570,9 @@ class EmailService:
 
     @classmethod
     def notify_stage_invoice_approved(cls, invoice_id: int, approved_by: str = "AP Approver", bill_number: str = None):
-        """Notify AP user and AR user that invoice has been approved and posted to ERP."""
+        """Notify all AP users (action required: mark payment processed) and all AR users (informational) that invoice has been approved and posted to ERP."""
         from common.database.database import SessionLocal
-        from common.models.db_models import User, Invoice, WorkflowStep, WorkflowStepTypeEnum
+        from common.models.db_models import User, Invoice
 
         db = SessionLocal()
         try:
@@ -557,58 +581,53 @@ class EmailService:
                 return
 
             vendor_name, invoice_number, amount, currency = cls._extract_invoice_meta(invoice)
-            target_emails = set()
 
-            # 1. Find coder / AP user (specific coder or fallback to active AP users)
-            ap_user_found = False
-            coding_step = db.query(WorkflowStep).filter(
-                WorkflowStep.invoice_id == invoice_id,
-                WorkflowStep.step_type.in_([WorkflowStepTypeEnum.CODING, "coding", WorkflowStepTypeEnum.AP_CODED, "ap_coded"])
-            ).order_by(WorkflowStep.timestamp.desc()).first()
-
-            if not coding_step:
-                coding_step = db.query(WorkflowStep).filter(
-                    WorkflowStep.invoice_id == invoice_id,
-                    WorkflowStep.step_name.ilike("%coded%")
-                ).order_by(WorkflowStep.timestamp.desc()).first()
-
-            if coding_step and coding_step.user:
-                coder = db.query(User).filter(
-                    (User.username == coding_step.user) | (User.email == coding_step.user)
-                ).first()
-                if coder and coder.email:
-                    target_emails.add((coder.email.lower(), coder.username or "AP User"))
-                    ap_user_found = True
-                elif "@" in coding_step.user:
-                    target_emails.add((coding_step.user.lower(), coding_step.user))
-                    ap_user_found = True
-
-            # If no specific AP user found, fallback to active AP Users
-            if not ap_user_found:
-                active_ap_users = db.query(User).filter(
-                    User.status == "active",
-                    User.role.isnot(None)
-                ).all()
-                for u in active_ap_users:
-                    role_str = (u.role or "").lower()
-                    if u.email and (("ap" in role_str and "approver" not in role_str) or "coder" in role_str):
-                        target_emails.add((u.email.lower(), u.username or "AP User"))
-
-            # 2. Also find and include active AR Users
+            # Query all active users
             active_users = db.query(User).filter(
                 User.status == "active",
                 User.role.isnot(None)
             ).all()
+
+            ap_recipients = set()
+            ar_recipients = set()
+
             for u in active_users:
                 if not u.email:
                     continue
                 role_str = (u.role or "").lower().replace("_", " ")
                 roles = [r.strip() for r in role_str.split(",")]
-                if any(r in ["ar user", "ar"] or ("ar" in r.split() and "approver" not in r) for r in roles):
-                    target_emails.add((u.email.lower(), u.username or "AR User"))
 
-            logger.info(f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to {len(target_emails)} recipients (AP and AR Users)")
-            for email, username in target_emails:
+                # Check for AP User (all active AP users / coders, excluding approvers)
+                if any(r in ["ap user", "ap", "coder"] or ("ap" in r.split() and "approver" not in r) for r in roles):
+                    ap_recipients.add((u.email.lower(), u.username or "AP User"))
+
+                # Check for AR User (all active AR users, excluding approvers)
+                if any(r in ["ar user", "ar"] or ("ar" in r.split() and "approver" not in r) for r in roles):
+                    ar_recipients.add((u.email.lower(), u.username or "AR User"))
+
+            # If any user has both AP and AR roles, prioritize the AP email with action required
+            ar_recipients = {item for item in ar_recipients if item[0] not in {ap[0] for ap in ap_recipients}}
+
+            logger.info(
+                f"[EmailService] Sending invoice approved & posted notification for invoice {invoice_id} to "
+                f"{len(ap_recipients)} AP Users (action required to mark payment processed) and {len(ar_recipients)} AR Users (informational)"
+            )
+
+            # 1. Notify ALL AP Users: Action required - mark invoice as payment processed
+            for email, username in ap_recipients:
+                cls.send_ap_invoice_posted_notification(
+                    email=email,
+                    username=username,
+                    vendor_name=vendor_name,
+                    invoice_number=invoice_number,
+                    amount=amount,
+                    currency=currency,
+                    approved_by=approved_by,
+                    bill_number=bill_number
+                )
+
+            # 2. Notify ALL AR Users: Informational only - posted to Sage/ERP
+            for email, username in ar_recipients:
                 cls.send_invoice_approved_notification(
                     email=email,
                     username=username,
