@@ -6,7 +6,7 @@ These models replace the MongoDB collections with SQL Server tables.
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, ForeignKey,
     DECIMAL, Boolean, Index, UniqueConstraint, Enum as SQLEnum,
-    Float, LargeBinary, Date
+    Float, LargeBinary, Date, text
 )
 from sqlalchemy.orm import relationship, backref
 from sqlalchemy.dialects.mssql import NVARCHAR
@@ -116,7 +116,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    request_id = Column(String(50), nullable=True, index=True)
+    request_id = Column(String(50), nullable=True, unique=True, index=True)
     filename = Column(String(500), nullable=False)
     original_filename = Column(String(500), nullable=False)
     file_path = Column(String(1000), nullable=False)
@@ -151,7 +151,7 @@ class Invoice(Base):
     # HOA / AP specific fields
     payment_terms = Column(String(100), nullable=True)
     payment_method = Column(String(50), nullable=True)
-    any_fee_applicable = Column(String(10), nullable=True)
+    any_fee_applicable = Column(String(100), nullable=True)
     fee_amount = Column(DECIMAL(18, 2), nullable=True)
     expense_type = Column(String(100), nullable=True)
     payment_reference = Column(String(255), nullable=True)
@@ -200,6 +200,7 @@ class Invoice(Base):
 
     # Indexes
     __table_args__ = (
+        Index('uq_invoices_request_id', 'request_id', unique=True, mssql_where=text("request_id IS NOT NULL")),
         Index('ix_invoice_vendor_number', 'vendor_id', 'invoice_number'),
         Index('ix_invoice_entity_status', 'entity', 'status'),
         Index('ix_invoice_uploaded_at_desc', uploaded_at.desc()),

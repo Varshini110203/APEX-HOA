@@ -255,6 +255,44 @@ async def cancel_upload(task_id: str):
     return {"status": "cancelled", "task_id": task_id}
 
 
+def generate_next_hoa_request_id(db_session: Session) -> str:
+    """
+    Find the highest existing request_id in the database with format HOA_xx,
+    and return the next sequence number (e.g. HOA_01 if none exist).
+    """
+    try:
+        inv_ids = db_session.query(Invoice.request_id).filter(
+            Invoice.request_id.isnot(None),
+            Invoice.request_id.like("HOA_%")
+        ).all()
+
+        max_num = 0
+        for (r_id,) in inv_ids:
+            if r_id and r_id.startswith("HOA_"):
+                suffix = r_id[4:]
+                if suffix.isdigit():
+                    num = int(suffix)
+                    if num > max_num:
+                        max_num = num
+
+        next_num = max_num + 1
+        return f"HOA_{next_num:02d}"
+    except Exception as e:
+        logger.error(f"Error generating next request_id: {e}")
+        return "HOA_01"
+
+
+@router.get("/next-request-id")
+def get_next_request_id(db: Session = Depends(get_db)):
+    """
+    Find the highest existing request_id in the database with format HOA_xx,
+    and return the next sequence number (e.g. HOA_01 if none exist).
+    """
+    next_request_id = generate_next_hoa_request_id(db)
+    seq = int(next_request_id[4:]) if next_request_id.startswith("HOA_") and next_request_id[4:].isdigit() else 1
+    return {"next_request_id": next_request_id, "sequence": seq}
+
+
 @router.post("/check-duplicate")
 async def check_duplicate_invoice_endpoint(
     payload: dict,
@@ -324,7 +362,7 @@ async def upload_invoices(
         if queue:
             await queue.put({"status": status, "message": message, "data": data, "progress": progress})
 
-    async def _process_single_file(file: UploadFile, index: int, total_files: int, assigned_request_id: Optional[str] = None):
+    async def _process_single_file(file: UploadFile, index: int, total_files: int, assigned_request_id: Optional[str] = None, attachment_files: Optional[List[UploadFile]] = None):
         #  Isolated DB Session per Task
         task_db = SessionLocal()
         trace_req_id = str(uuid.uuid4())
@@ -406,9 +444,19 @@ async def upload_invoices(
                     os.remove(file_path)
                 return {"success": False, "filename": clean_name, "reason": "cancelled"}
 
+            # ---- ENSURE UNIQUE REQUEST ID GENERATED AT UPLOAD TIME ----
+            actual_request_id = assigned_request_id
+            if not actual_request_id:
+                actual_request_id = generate_next_hoa_request_id(task_db)
+            else:
+                existing_req = task_db.query(Invoice.id).filter(Invoice.request_id == actual_request_id).first()
+                if existing_req:
+                    actual_request_id = generate_next_hoa_request_id(task_db)
+                    print(f"[Backend] Request ID '{assigned_request_id}' was already taken; auto-assigned '{actual_request_id}'")
+
             # ---- CREATE DB RECORD (INITIAL) ----
             new_invoice = Invoice(
-                request_id=assigned_request_id,
+                request_id=actual_request_id,
                 filename=new_name,
                 original_filename=clean_name,
                 file_path=file_path,
@@ -668,13 +716,20 @@ async def upload_invoices(
 
             # Populate HOA & payment columns
             new_invoice.vendor_code = new_invoice.vendor_id
-            new_invoice.payment_terms = invoice_details.get("payment_terms", {}).get("value") or invoice_details.get("payment_term", {}).get("value")
-            new_invoice.payment_method = invoice_details.get("payment_method", {}).get("value")
-            new_invoice.payment_reference = invoice_details.get("payment_reference", {}).get("value")
-            new_invoice.expense_type = invoice_details.get("expense_type", {}).get("value")
-            new_invoice.expense_category = invoice_details.get("expense_category", {}).get("value")
-            new_invoice.loan_number = invoice_details.get("loan_number", {}).get("value")
-            new_invoice.any_fee_applicable = invoice_details.get("any_fee_applicable", {}).get("value")
+            pt_val = invoice_details.get("payment_terms", {}).get("value") or invoice_details.get("payment_term", {}).get("value")
+            new_invoice.payment_terms = str(pt_val)[:100] if pt_val else None
+            pm_val = invoice_details.get("payment_method", {}).get("value")
+            new_invoice.payment_method = str(pm_val)[:50] if pm_val else None
+            pr_val = invoice_details.get("payment_reference", {}).get("value")
+            new_invoice.payment_reference = str(pr_val)[:255] if pr_val else None
+            et_val = invoice_details.get("expense_type", {}).get("value")
+            new_invoice.expense_type = str(et_val)[:100] if et_val else None
+            ec_val = invoice_details.get("expense_category", {}).get("value")
+            new_invoice.expense_category = str(ec_val)[:100] if ec_val else None
+            ln_val = invoice_details.get("loan_number", {}).get("value")
+            new_invoice.loan_number = str(ln_val)[:100] if ln_val else None
+            afa_val = invoice_details.get("any_fee_applicable", {}).get("value")
+            new_invoice.any_fee_applicable = str(afa_val)[:100] if afa_val else None
             fee_val = amounts.get("fee_amount", {}).get("value")
             if fee_val is not None:
                 new_invoice.fee_amount = remove_currency_format(fee_val)
@@ -773,35 +828,36 @@ async def upload_invoices(
                 return {"success": False, "filename": clean_name, "reason": "cancelled"}
 
             # Process attachments if provided
-            if attachments:
+            valid_attachments = [a for a in (attachment_files or attachments or []) if getattr(a, "filename", None)]
+            if valid_attachments:
                 try:
                     from common.services.azure_blob import upload_file_to_blob, AZURE_BLOB_FOLDER
                     from common.config.config import TOOL
                     prefix = f"{AZURE_BLOB_FOLDER}/{TOOL}" if AZURE_BLOB_FOLDER else TOOL
 
                     att_list = []
-                    for att_file in attachments:
+                    for att_file in valid_attachments:
                         att_clean = att_file.filename.replace("\\", "/").split("/")[-1]
+                        if not att_clean:
+                            continue
                         att_n, att_e = os.path.splitext(att_clean)
                         att_ts = get_ist_now().strftime("%Y%m%d_%H%M%S")
                         att_new_name = f"{att_n}_{att_ts}{att_e}"
                         att_local_path = os.path.join(upload_dir, att_new_name)
                         
                         # Read contents and save locally
+                        await att_file.seek(0)
                         att_contents = await att_file.read()
                         with open(att_local_path, "wb") as f_att:
                             f_att.write(att_contents)
                         
-                        # Upload to Azure Blob Storage
+                        # Upload to Azure Blob Storage (safe / non-fatal)
                         att_blob = f"{prefix}/attachments/{invoice_id}/{att_new_name}"
-                        upload_file_to_blob(att_local_path, att_blob)
-                        
-                        # Remove local temp file
                         try:
-                            if os.path.exists(att_local_path):
-                                os.remove(att_local_path)
-                        except:
-                            pass
+                            upload_file_to_blob(att_local_path, att_blob)
+                            print(f"[Backend] Uploaded attachment to Azure Blob: {att_blob}")
+                        except Exception as blob_err:
+                            print(f"[Backend] Azure Blob upload skipped/failed for attachment {att_clean}: {blob_err}")
                             
                         att_list.append({
                             "filename": att_clean,
@@ -829,6 +885,7 @@ async def upload_invoices(
             )
             new_invoice.status_history.append(processed_history)
             task_db.commit()
+            task_db.refresh(new_invoice)
 
             # Keep local copy if Azure blob upload wasn't confirmed or as cache
             # (only delete local file if Azure blob definitely has it and works)
@@ -922,8 +979,16 @@ async def upload_invoices(
         except Exception as b_err:
             print(f"[Backend] Blob upload error: {b_err}")
 
+        actual_req_id = request_id
+        if not actual_req_id:
+            actual_req_id = generate_next_hoa_request_id(db)
+        else:
+            existing_req = db.query(Invoice.id).filter(Invoice.request_id == actual_req_id).first()
+            if existing_req:
+                actual_req_id = generate_next_hoa_request_id(db)
+
         new_invoice = Invoice(
-            request_id=request_id,
+            request_id=actual_req_id,
             filename=new_name,
             original_filename=att_clean,
             file_path=file_path,
@@ -1024,7 +1089,7 @@ async def upload_invoices(
                 break
 
             try:
-                res = await _process_single_file(file, idx + 1, total_files, assigned_request_id=request_id)
+                res = await _process_single_file(file, idx + 1, total_files, assigned_request_id=request_id, attachment_files=attachment_files)
                 if res["success"]:
                     saved_invoices.append(res["data"])
                 elif res.get("reason") == "cancelled":
@@ -1108,6 +1173,9 @@ async def get_invoices(
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
+    elif tab == "all":
+        # Return all invoices without tab/status filtering
+        pass
     elif tab == "in_progress" or not tab:
         # Default view: Exclude Posted, Processed Payment, Paid Payment, Request Closed, and Archived
         expressions.append(and_(
@@ -1452,7 +1520,7 @@ async def get_invoices(
             )
         )
 
-    search_fields = ["request_id", "invoice_number", "vendor_name", "vendor_id", "status", "filename"]
+    search_fields = ["request_id", "invoice_number", "vendor_name", "vendor_id", "status", "filename", "loan_number"]
     
     paginated_res = invoice_repo.get_paginated(
         db,
@@ -1514,6 +1582,9 @@ async def get_invoice_filter_options(
         expressions.append(Invoice.status == InvoiceStatusEnum.REQUEST_CLOSED)
     elif tab == "archive":
         expressions.append(Invoice.status == InvoiceStatusEnum.ARCHIVED)
+    elif tab == "all":
+        # Return all invoices without tab/status filtering
+        pass
     elif tab == "in_progress" or not tab:
         # Default view: Exclude Posted, Processed Payment, Paid Payment, Request Closed, and Archived
         expressions.append(and_(
@@ -5051,19 +5122,22 @@ async def add_attachments(
         with open(local_path, "wb") as f:
             f.write(contents)
 
-        # Upload file to Azure blob
+        # Upload file to Azure blob (safe / non-fatal)
         blob_name = f"{prefix}/attachments/{invoice_id}/{new_name}"
-        upload_file_to_blob(local_path, blob_name)
-
-        # Clean up local file
         try:
-            os.remove(local_path)
-        except:
-            pass
+            upload_file_to_blob(local_path, blob_name)
+            # Only remove local temp file if Azure Blob upload succeeded
+            try:
+                os.remove(local_path)
+            except:
+                pass
+        except Exception as blob_err:
+            print(f"[Backend] Azure Blob upload skipped/failed for attachment {clean_name}: {blob_err}")
 
         current_attachments.append({
             "filename": clean_name,
             "blob_name": blob_name,
+            "file_path": local_path,
             "uploaded_by": current_user.username,
             "uploaded_at": get_ist_now().isoformat(),
             "size": len(contents)

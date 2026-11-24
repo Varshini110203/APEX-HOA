@@ -93,6 +93,9 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             for field in search_fields:
                 if hasattr(self.model, field):
                     search_expressions.append(getattr(self.model, field).ilike(search_filter))
+            # Also search loan_number inside extracted_data JSON for models that store raw extracted JSON
+            if "loan_number" in search_fields and hasattr(self.model, "extracted_data"):
+                search_expressions.append(getattr(self.model, "extracted_data").ilike(f'%"loan_number"%{search}%'))
             if search_expressions:
                 query = query.filter(or_(*search_expressions))
 

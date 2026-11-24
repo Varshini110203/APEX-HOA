@@ -37,6 +37,7 @@ const ACCESSOR_TO_DB_FIELD = {
     amount_due: "amount_due",
     uploaded_at: "uploaded_at",
     processed_at: "processed_at",
+    loan_number: "loan_number",
 };
 
 const Invoice = () => {
@@ -369,7 +370,12 @@ const Invoice = () => {
 
             if (failed.length > 0) {
                 if (files.length === 1) {
-                    toast.error("The Uploaded PDF is not a valid invoice or check");
+                    const failReason = failed[0]?.reason;
+                    if (failReason && failReason !== "is not a pdf" && failReason !== "failed") {
+                        toast.error(failed[0]?.message || `Upload failed: ${failReason}`);
+                    } else {
+                        toast.error("The Uploaded PDF is not a valid invoice or check");
+                    }
                 } else {
                     let alertMsg = "";
                     const pdfFailures = failed.filter(f => f.reason === "is not a pdf");
@@ -505,7 +511,7 @@ const Invoice = () => {
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                             <SearchInput
-                                placeholder={pageTab === 'delete' ? "Search deleted..." : "Search invoices..."}
+                                placeholder={pageTab === 'delete' ? "Search deleted..." : "Search invoices, loan number..."}
                                 value={localSearch}
                                 onChange={(e) => setLocalSearch(e.target.value)}
                                 onClear={() => setLocalSearch("")}

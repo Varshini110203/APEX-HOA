@@ -1,3 +1,12 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Explicitly load .env from the backend root directory (parent of app) BEFORE any local imports
+env_path = Path(__file__).resolve().parent.parent / '.env'
+print(f"Loading .env from: {env_path}")
+load_dotenv(dotenv_path=env_path, override=True)
+
 from sqlalchemy import text
 from common.auth.jwt import get_current_user
 from common.middleware.trace_middleware import TraceMiddleware
@@ -8,14 +17,6 @@ from common.routes import auth, invoices, coding, dashboard, currency
 from common.routes.auth import sso_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-
-# Explicitly load .env from the backend root directory (parent of app)
-env_path = Path(__file__).resolve().parent.parent / '.env'
-print(f"Loading .env from: {env_path}")
-load_dotenv(dotenv_path=env_path, override=True)
 
 
 # Reload trigger: 1
@@ -90,6 +91,25 @@ async def startup_event():
                     conn.execute(text("ALTER TABLE invoices ADD request_id NVARCHAR(50) NULL"))
                     conn.commit()
                     print("✓ Added request_id column to invoices table")
+
+                # Ensure unique constraint/index on request_id
+                uq_check = conn.execute(text("""
+                    SELECT COUNT(*)
+                    FROM sys.indexes i
+                    JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                    JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                    WHERE i.object_id = OBJECT_ID('invoices') 
+                      AND c.name = 'request_id' 
+                      AND i.is_unique = 1
+                """)).scalar()
+                if uq_check == 0:
+                    conn.execute(text("""
+                        CREATE UNIQUE NONCLUSTERED INDEX uq_invoices_request_id 
+                        ON invoices(request_id) 
+                        WHERE request_id IS NOT NULL
+                    """))
+                    conn.commit()
+                    print("✓ Added unique index 'uq_invoices_request_id' to invoices table")
             except Exception as mig_err:
                 print(f"Note on migration: {mig_err}")
         print("✓ Database connection verified successfully")

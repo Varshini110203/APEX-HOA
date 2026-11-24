@@ -1,49 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Modal } from "antd";
-import { Trash2, Hash, CheckCircle2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import CustomButton from "../../shared/components/CustomButton";
-
-// ── Request ID generator ─────────────────────────────────────────────────────
-// Persists counter in localStorage so that sequence numbers increment
-// continuously without restarting, even across page reloads, browser restarts, and function re-executions.
-// Format: yyyymmddhhmmss + sequence (e.g. 0001, 0002 … 9999, 10000, 10001 …)
-const REQUEST_ID_COUNTER_KEY = "apex_request_id_counter";
-let _sessionSeq = 0;
-
-const getNextSequence = () => {
-    try {
-        const stored = localStorage.getItem(REQUEST_ID_COUNTER_KEY);
-        let seq = stored ? parseInt(stored, 10) : 0;
-        if (isNaN(seq) || seq < 0) {
-            seq = 0;
-        }
-        seq += 1;
-        localStorage.setItem(REQUEST_ID_COUNTER_KEY, String(seq));
-        return seq;
-    } catch {
-        // Fallback to in-memory counter if localStorage is not accessible
-        _sessionSeq += 1;
-        return _sessionSeq;
-    }
-};
-
-const generateRequestId = () => {
-    const nextSeq = getNextSequence();
-    const now = new Date();
-    const pad2 = (n) => String(n).padStart(2, "0");
-    const pad4 = (n) => String(n).padStart(4, "0");
-
-    const yyyy = now.getFullYear();
-    const MM   = pad2(now.getMonth() + 1);
-    const dd   = pad2(now.getDate());
-    const hh   = pad2(now.getHours());
-    const mm   = pad2(now.getMinutes());
-    const ss   = pad2(now.getSeconds());
-    const seq  = pad4(nextSeq);
-
-    return `${yyyy}${MM}${dd}${hh}${mm}${ss}${seq}`;
-};
-// ────────────────────────────────────────────────────────────────────────────
 
 const AddInvoiceModal = ({
     open,
@@ -54,19 +12,12 @@ const AddInvoiceModal = ({
 }) => {
     const [files, setFiles]                   = useState([]);
     const [attachments, setAttachments]       = useState([]);
-    const [requestId, setRequestId]           = useState(null);
-    const [idCopied, setIdCopied]             = useState(false);
 
-    // Auto-generate Request ID when modal opens, and reset when closed
+    // Reset state when modal opens or closes
     useEffect(() => {
-        if (open) {
-            setRequestId(generateRequestId());
-            setIdCopied(false);
-        } else {
+        if (!open) {
             setFiles([]);
             setAttachments([]);
-            setRequestId(null);
-            setIdCopied(false);
         }
     }, [open]);
 
@@ -125,28 +76,13 @@ const AddInvoiceModal = ({
 
     const handleUpload = () => {
         if (files.length === 0 && attachments.length === 0) return;
-        onUpload?.(files, attachments, requestId);
+        onUpload?.(files, attachments);
     };
 
     const handleCancel = () => {
         setFiles([]);
         setAttachments([]);
-        setRequestId(null);
-        setIdCopied(false);
         onCancel();
-    };
-
-    const handleGenerateId = () => {
-        setRequestId(generateRequestId());
-        setIdCopied(false);
-    };
-
-    const handleCopyId = () => {
-        if (!requestId) return;
-        navigator.clipboard.writeText(requestId).then(() => {
-            setIdCopied(true);
-            setTimeout(() => setIdCopied(false), 2000);
-        });
     };
 
     const formatSize = (bytes) => {
@@ -188,60 +124,6 @@ const AddInvoiceModal = ({
 
                 {/* ── Body ─────────────────────────────────────────────────── */}
                 <div className="px-6 py-5 flex flex-col gap-5">
-
-                    {/* ── Request ID section ─────────────────────────────── */}
-                    <div className="flex flex-col gap-3">
-                        <p className="text-[13px] font-medium text-[#2F3A4C] custom-font-jura">
-                            Request ID
-                        </p>
-
-                        <div className="flex items-center gap-3">
-                            {/* Generate button */}
-                            <button
-                                onClick={handleGenerateId}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#22B4E6] text-[#22B4E6] text-[13px] font-medium hover:bg-[#F0FAFF] transition-colors"
-                            >
-                                Create New Request ID
-                            </button>
-
-                            {/* ID display badge */}
-                            {requestId && (
-                                <div
-                                    onClick={handleCopyId}
-                                    title="Click to copy"
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#F0FAFF] border border-[#C5E8F5] cursor-pointer hover:border-[#22B4E6] transition-colors group"
-                                >
-                                    {idCopied ? (
-                                        <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                                    ) : (
-                                        <Hash size={10} className="text-[#22B4E6] shrink-0" />
-                                    )}
-                                    <span
-                                        className="text-[13px] font-mono tracking-wide"
-                                        style={{
-                                            background: "linear-gradient(90deg, #22B4E6, #7B5EF8)",
-                                            WebkitBackgroundClip: "text",
-                                            WebkitTextFillColor: "transparent",
-                                        }}
-                                    >
-                                        {requestId}
-                                    </span>
-                                    <span className="text-[11px] text-gray-400 group-hover:text-[#22B4E6] transition-colors">
-                                        {idCopied ? "Copied!" : "Copy"}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-
-                        {!requestId && (
-                            <p className="text-[12px] text-gray-400">
-                                Click <strong>Create New Request ID</strong> to generate a unique system ID for this request.
-                            </p>
-                        )}
-                    </div>
-
-                    {/* ── Divider ────────────────────────────────────────── */}
-                    <div className="border-t border-[#F0F4F8]" />
 
                     {/* ── Upload Invoice section ─────────────────────────── */}
                     <div className="flex flex-col gap-3">

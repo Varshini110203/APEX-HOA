@@ -4,7 +4,7 @@ import { formatCurrency, formatIST } from "../../utils/formatters";
 import { getERPSystem } from "../../utils/envHelper";
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
-const getStatusLabel = (value, level, row = null) => {
+export const getStatusLabel = (value, level, row = null) => {
     if (row?.status_label) return row.status_label;
     if (typeof value === 'string' && (value.startsWith("Waiting for") || value.includes("(level"))) {
         return value;
@@ -40,7 +40,7 @@ const getStatusLabel = (value, level, row = null) => {
 };
 
 // ─── Status badge helper ──────────────────────────────────────────────────────
-const StatusBadge = ({ value, level, label }) => {
+export const StatusBadge = ({ value, level, label }) => {
     const colorMap = {
         approved: "bg-green-100 text-green-700",
         pending: "bg-yellow-100 text-yellow-700",
@@ -215,6 +215,14 @@ export const getCondensedColumns = (onView, onDelete, onArchive, userRole, openi
         filterable: true,
     },
     {
+        header: "Loan Number",
+        accessor: "loan_number",
+        sortable: true,
+        filterable: true,
+        getFilterValue: (row) => row?.loan_number ?? row?.extracted_data?.invoice_details?.loan_number?.value ?? "",
+        render: (val, row) => val || row?.extracted_data?.invoice_details?.loan_number?.value || "-",
+    },
+    {
         header: "Total Amount",
         accessor: "total_amount",
         filterable: true,
@@ -375,6 +383,14 @@ export const getFullColumns = (onView, onDelete, onArchive, userRole, openingInv
         accessor: "invoice_number",
         sortable: true,
         filterable: true,
+    },
+    {
+        header: "Loan Number",
+        accessor: "loan_number",
+        sortable: true,
+        filterable: true,
+        getFilterValue: (row) => row?.loan_number ?? row?.extracted_data?.invoice_details?.loan_number?.value ?? "",
+        render: (val, row) => val || row?.extracted_data?.invoice_details?.loan_number?.value || "-",
     },
     {
         header: "Invoice Date",
