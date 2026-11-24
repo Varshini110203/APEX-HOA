@@ -263,6 +263,15 @@ def _create_ap_bill(
     # --------------------------------------------------
     vendor_id = invoice.vendor_id or ""
     invoice_number = invoice.invoice_number
+    request_id = getattr(invoice, "request_id", None)
+    # if not request_id and invoice.extracted_data:
+    #     try:
+    #         _ed_data = _json.loads(invoice.extracted_data) if isinstance(invoice.extracted_data, str) else (invoice.extracted_data or {})
+    #         request_id = _ed_data.get("invoice_details", {}).get("request_id", {}).get("value")
+    #     except Exception:
+    #         pass
+    # if not request_id:
+    #     request_id = invoice_number or str(invoice.id)
 
     # Use memo from Quick View (extracted_data.additional_info.memo.value) as the description.
     _ed_for_memo = _json.loads(invoice.extracted_data) if isinstance(invoice.extracted_data, str) else (invoice.extracted_data or {})
@@ -375,7 +384,7 @@ def _create_ap_bill(
     # Bill payload
     # --------------------------------------------------
     bill_payload = {
-        "billNumber": f"{invoice_number}",
+        "billNumber": f"{request_id}",
         "vendor": {"id": str(vendor_id)},
         "referenceNumber": str(invoice.reference_number),
         "description": description,

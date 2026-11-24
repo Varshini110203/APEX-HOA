@@ -2957,7 +2957,7 @@ async def repost_to_sage(
         # The bill number sent to Sage is always invoice.invoice_number.
         # It must NEVER change on repost — use invoice_number as the
         # single source of truth regardless of what Sage echoes back.
-        resolved_bill_number = invoice.invoice_number
+        resolved_bill_number = invoice.request_id
 
         erp_name = settings.TOOL.capitalize()
         logger.info(
