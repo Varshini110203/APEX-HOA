@@ -1,17 +1,36 @@
 from azure.storage.blob import BlobServiceClient, ContainerClient, generate_blob_sas, BlobSasPermissions
 from datetime import datetime, timedelta, timezone
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure .env is loaded if this module is imported independently
+_env_path = Path(__file__).resolve().parent.parent.parent / '.env'
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
+else:
+    load_dotenv()
 
 # Azure Connection Details
 CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 CONTAINER_NAME = os.getenv("AZURE_STORAGE_CONTAINER_NAME")
 AZURE_BLOB_FOLDER = os.getenv("AZURE_BLOB_FOLDER", "")
 
-blob_service_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
-container_client = blob_service_client.get_container_client(CONTAINER_NAME)
+blob_service_client = None
+container_client = None
+
+if CONNECTION_STRING:
+    try:
+        blob_service_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
+        if CONTAINER_NAME:
+            container_client = blob_service_client.get_container_client(CONTAINER_NAME)
+    except Exception as e:
+        print(f"[AzureBlob] Warning: Failed to initialize BlobServiceClient: {e}")
 
 def upload_file_to_blob(local_path: str, blob_name: str) -> None:
     """Upload a local file to Azure Blob Storage."""
+    if not container_client:
+        raise RuntimeError("Azure Blob container client is not initialized.")
     try:
         blob_client = container_client.get_blob_client(blob_name)
         with open(local_path, "rb") as data:

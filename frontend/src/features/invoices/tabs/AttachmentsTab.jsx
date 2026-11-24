@@ -162,7 +162,23 @@ const AttachmentsTab = () => {
 
     const canModify = canAddAttachment;
 
-    const attachments = activeInvoiceData?.attachments || [];
+    const rawAttachments = activeInvoiceData?.attachments;
+    const attachments = useMemo(() => {
+        if (!rawAttachments) return [];
+        if (Array.isArray(rawAttachments)) return rawAttachments;
+        if (typeof rawAttachments === "string") {
+            try {
+                const parsed = JSON.parse(rawAttachments);
+                return Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+            } catch {
+                return [];
+            }
+        }
+        if (typeof rawAttachments === "object" && rawAttachments !== null) {
+            return [rawAttachments];
+        }
+        return [];
+    }, [rawAttachments]);
 
     useEffect(() => {
         const loadFreshData = async () => {
@@ -337,7 +353,8 @@ const AttachmentsTab = () => {
             dataIndex: "filename",
             key: "filename",
             render: (text, record) => {
-                const lower = (text || "").toLowerCase();
+                const name = record.filename || record.name || text || "Attachment";
+                const lower = name.toLowerCase();
                 const isPdf = lower.endsWith(".pdf");
                 const isExcel = lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv");
                 return (
@@ -347,7 +364,7 @@ const AttachmentsTab = () => {
                             e.stopPropagation();
                             handleView(record);
                         }}
-                        title={`Click to view ${text}`}
+                        title={`Click to view ${name}`}
                     >
                         {isPdf ? (
                             <FileText size={16} className="text-[#22B4E6] flex-shrink-0" />
@@ -357,7 +374,7 @@ const AttachmentsTab = () => {
                             <Image size={16} className="text-[#22B4E6] flex-shrink-0" />
                         )}
                         <span className="font-medium text-gray-800 group-hover:text-[#22B4E6] group-hover:underline transition-colors truncate">
-                            {text}
+                            {name}
                         </span>
                     </div>
                 );
@@ -367,7 +384,7 @@ const AttachmentsTab = () => {
             title: "Size",
             dataIndex: "size",
             key: "size",
-            render: (size) => formatSize(size)
+            render: (size, record) => formatSize(size ?? record?.file_size)
         },
         {
             title: "Uploaded By",
@@ -459,7 +476,7 @@ const AttachmentsTab = () => {
             <div className="flex-1 overflow-auto bg-white rounded-xl border border-gray-100 shadow-sm">
                 <Table
                     columns={columns}
-                    dataSource={attachments.map((att, idx) => ({ ...att, key: idx }))}
+                    dataSource={attachments.map((att, idx) => ({ ...att, key: att.blob_name || att.filename || att.name || idx }))}
                     pagination={false}
                     onRow={(record) => ({
                         onClick: (e) => {

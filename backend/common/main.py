@@ -1,3 +1,12 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Explicitly load .env from the backend root directory (parent of app) BEFORE any local imports
+env_path = Path(__file__).resolve().parent.parent / '.env'
+print(f"Loading .env from: {env_path}")
+load_dotenv(dotenv_path=env_path, override=True)
+
 from sqlalchemy import text
 from common.auth.jwt import get_current_user
 from common.middleware.trace_middleware import TraceMiddleware
@@ -8,14 +17,6 @@ from common.routes import auth, invoices, coding, dashboard, currency
 from common.routes.auth import sso_router
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-
-# Explicitly load .env from the backend root directory (parent of app)
-env_path = Path(__file__).resolve().parent.parent / '.env'
-print(f"Loading .env from: {env_path}")
-load_dotenv(dotenv_path=env_path, override=True)
 
 
 # Reload trigger: 1

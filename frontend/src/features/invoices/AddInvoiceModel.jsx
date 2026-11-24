@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Modal } from "antd";
-import { Trash2, Hash, CheckCircle2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import CustomButton from "../../shared/components/CustomButton";
-import { getNextRequestId } from "../../api/invoiceApi";
 
 const AddInvoiceModal = ({
     open,
@@ -13,14 +12,9 @@ const AddInvoiceModal = ({
 }) => {
     const [files, setFiles]                   = useState([]);
     const [attachments, setAttachments]       = useState([]);
-    const [requestId, setRequestId]           = useState(null);
-    const [idCopied, setIdCopied]             = useState(false);
-    const [generatingId, setGeneratingId]     = useState(false);
 
-    // Reset state when modal opens or closes; Request ID is not created initially
+    // Reset state when modal opens or closes
     useEffect(() => {
-        setRequestId(null);
-        setIdCopied(false);
         if (!open) {
             setFiles([]);
             setAttachments([]);
@@ -82,42 +76,13 @@ const AddInvoiceModal = ({
 
     const handleUpload = () => {
         if (files.length === 0 && attachments.length === 0) return;
-        onUpload?.(files, attachments, requestId);
+        onUpload?.(files, attachments);
     };
 
     const handleCancel = () => {
         setFiles([]);
         setAttachments([]);
-        setRequestId(null);
-        setIdCopied(false);
         onCancel();
-    };
-
-    const handleGenerateId = async () => {
-        try {
-            setGeneratingId(true);
-            const res = await getNextRequestId();
-            if (res && res.next_request_id) {
-                setRequestId(res.next_request_id);
-            } else {
-                setRequestId("HOA_01");
-            }
-            setIdCopied(false);
-        } catch (err) {
-            console.error("Failed to fetch next request ID from server:", err);
-            setRequestId("HOA_01");
-            setIdCopied(false);
-        } finally {
-            setGeneratingId(false);
-        }
-    };
-
-    const handleCopyId = () => {
-        if (!requestId) return;
-        navigator.clipboard.writeText(requestId).then(() => {
-            setIdCopied(true);
-            setTimeout(() => setIdCopied(false), 2000);
-        });
     };
 
     const formatSize = (bytes) => {
@@ -159,61 +124,6 @@ const AddInvoiceModal = ({
 
                 {/* ── Body ─────────────────────────────────────────────────── */}
                 <div className="px-6 py-5 flex flex-col gap-5">
-
-                    {/* ── Request ID section ─────────────────────────────── */}
-                    <div className="flex flex-col gap-3">
-                        <p className="text-[13px] font-medium text-[#2F3A4C] custom-font-jura">
-                            Request ID
-                        </p>
-
-                        <div className="flex items-center gap-3">
-                            {/* Generate button */}
-                            <button
-                                onClick={handleGenerateId}
-                                disabled={generatingId}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#22B4E6] text-[#22B4E6] text-[13px] font-medium hover:bg-[#F0FAFF] transition-colors disabled:opacity-50 cursor-pointer"
-                            >
-                                {generatingId ? "Generating..." : "Create New Request ID"}
-                            </button>
-
-                            {/* ID display badge */}
-                            {requestId && (
-                                <div
-                                    onClick={handleCopyId}
-                                    title="Click to copy"
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#F0FAFF] border border-[#C5E8F5] cursor-pointer hover:border-[#22B4E6] transition-colors group"
-                                >
-                                    {idCopied ? (
-                                        <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-                                    ) : (
-                                        <Hash size={10} className="text-[#22B4E6] shrink-0" />
-                                    )}
-                                    <span
-                                        className="text-[13px] font-mono tracking-wide"
-                                        style={{
-                                            background: "linear-gradient(90deg, #22B4E6, #7B5EF8)",
-                                            WebkitBackgroundClip: "text",
-                                            WebkitTextFillColor: "transparent",
-                                        }}
-                                    >
-                                        {requestId}
-                                    </span>
-                                    <span className="text-[11px] text-gray-400 group-hover:text-[#22B4E6] transition-colors">
-                                        {idCopied ? "Copied!" : "Copy"}
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-
-                        {!requestId && (
-                            <p className="text-[12px] text-gray-400">
-                                Click <strong>Create New Request ID</strong> to generate a unique system ID for this request.
-                            </p>
-                        )}
-                    </div>
-
-                    {/* ── Divider ────────────────────────────────────────── */}
-                    <div className="border-t border-[#F0F4F8]" />
 
                     {/* ── Upload Invoice section ─────────────────────────── */}
                     <div className="flex flex-col gap-3">
