@@ -2,48 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Modal } from "antd";
 import { Trash2, Hash, CheckCircle2 } from "lucide-react";
 import CustomButton from "../../shared/components/CustomButton";
-
-// ── Request ID generator ─────────────────────────────────────────────────────
-// Persists counter in localStorage so that sequence numbers increment
-// continuously without restarting, even across page reloads, browser restarts, and function re-executions.
-// Format: yyyymmddhhmmss + sequence (e.g. 0001, 0002 … 9999, 10000, 10001 …)
-const REQUEST_ID_COUNTER_KEY = "apex_request_id_counter";
-let _sessionSeq = 0;
-
-const getNextSequence = () => {
-    try {
-        const stored = localStorage.getItem(REQUEST_ID_COUNTER_KEY);
-        let seq = stored ? parseInt(stored, 10) : 0;
-        if (isNaN(seq) || seq < 0) {
-            seq = 0;
-        }
-        seq += 1;
-        localStorage.setItem(REQUEST_ID_COUNTER_KEY, String(seq));
-        return seq;
-    } catch {
-        // Fallback to in-memory counter if localStorage is not accessible
-        _sessionSeq += 1;
-        return _sessionSeq;
-    }
-};
-
-const generateRequestId = () => {
-    const nextSeq = getNextSequence();
-    const now = new Date();
-    const pad2 = (n) => String(n).padStart(2, "0");
-    const pad4 = (n) => String(n).padStart(4, "0");
-
-    const yyyy = now.getFullYear();
-    const MM   = pad2(now.getMonth() + 1);
-    const dd   = pad2(now.getDate());
-    const hh   = pad2(now.getHours());
-    const mm   = pad2(now.getMinutes());
-    const ss   = pad2(now.getSeconds());
-    const seq  = pad4(nextSeq);
-
-    return `${yyyy}${MM}${dd}${hh}${mm}${ss}${seq}`;
-};
-// ────────────────────────────────────────────────────────────────────────────
+import { getNextRequestId } from "../../api/invoiceApi";
 
 const AddInvoiceModal = ({
     open,
@@ -56,17 +15,15 @@ const AddInvoiceModal = ({
     const [attachments, setAttachments]       = useState([]);
     const [requestId, setRequestId]           = useState(null);
     const [idCopied, setIdCopied]             = useState(false);
+    const [generatingId, setGeneratingId]     = useState(false);
 
-    // Auto-generate Request ID when modal opens, and reset when closed
+    // Reset state when modal opens or closes; Request ID is not created initially
     useEffect(() => {
-        if (open) {
-            setRequestId(generateRequestId());
-            setIdCopied(false);
-        } else {
+        setRequestId(null);
+        setIdCopied(false);
+        if (!open) {
             setFiles([]);
             setAttachments([]);
-            setRequestId(null);
-            setIdCopied(false);
         }
     }, [open]);
 
@@ -136,9 +93,23 @@ const AddInvoiceModal = ({
         onCancel();
     };
 
-    const handleGenerateId = () => {
-        setRequestId(generateRequestId());
-        setIdCopied(false);
+    const handleGenerateId = async () => {
+        try {
+            setGeneratingId(true);
+            const res = await getNextRequestId();
+            if (res && res.next_request_id) {
+                setRequestId(res.next_request_id);
+            } else {
+                setRequestId("HOA_01");
+            }
+            setIdCopied(false);
+        } catch (err) {
+            console.error("Failed to fetch next request ID from server:", err);
+            setRequestId("HOA_01");
+            setIdCopied(false);
+        } finally {
+            setGeneratingId(false);
+        }
     };
 
     const handleCopyId = () => {
@@ -199,9 +170,10 @@ const AddInvoiceModal = ({
                             {/* Generate button */}
                             <button
                                 onClick={handleGenerateId}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#22B4E6] text-[#22B4E6] text-[13px] font-medium hover:bg-[#F0FAFF] transition-colors"
+                                disabled={generatingId}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#22B4E6] text-[#22B4E6] text-[13px] font-medium hover:bg-[#F0FAFF] transition-colors disabled:opacity-50 cursor-pointer"
                             >
-                                Create New Request ID
+                                {generatingId ? "Generating..." : "Create New Request ID"}
                             </button>
 
                             {/* ID display badge */}

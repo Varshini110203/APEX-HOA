@@ -251,6 +251,36 @@ async def cancel_upload(task_id: str):
     return {"status": "cancelled", "task_id": task_id}
 
 
+@router.get("/next-request-id")
+def get_next_request_id(db: Session = Depends(get_db)):
+    """
+    Find the highest existing request_id in the database with format HOA_xx,
+    and return the next sequence number (e.g. HOA_01 if none exist).
+    """
+    try:
+        # Check active invoices
+        inv_ids = db.query(Invoice.request_id).filter(
+            Invoice.request_id.isnot(None),
+            Invoice.request_id.like("HOA_%")
+        ).all()
+
+        max_num = 0
+        for (r_id,) in inv_ids:
+            if r_id and r_id.startswith("HOA_"):
+                suffix = r_id[4:]
+                if suffix.isdigit():
+                    num = int(suffix)
+                    if num > max_num:
+                        max_num = num
+
+        next_num = max_num + 1
+        next_request_id = f"HOA_{next_num:02d}"
+        return {"next_request_id": next_request_id, "sequence": next_num}
+    except Exception as e:
+        logger.error(f"Error generating next request_id: {e}")
+        return {"next_request_id": "HOA_01", "sequence": 1}
+
+
 @router.post("/check-duplicate")
 async def check_duplicate_invoice_endpoint(
     payload: dict,
@@ -402,9 +432,28 @@ async def upload_invoices(
                     os.remove(file_path)
                 return {"success": False, "filename": clean_name, "reason": "cancelled"}
 
+            # ---- ENSURE UNIQUE REQUEST ID ----
+            actual_request_id = assigned_request_id
+            if actual_request_id:
+                existing_req = task_db.query(Invoice.id).filter(Invoice.request_id == actual_request_id).first()
+                if existing_req:
+                    # Request ID is already in DB; auto-advance to next available sequence
+                    inv_ids = task_db.query(Invoice.request_id).filter(
+                        Invoice.request_id.isnot(None),
+                        Invoice.request_id.like("HOA_%")
+                    ).all()
+                    max_num = 0
+                    for (r_id,) in inv_ids:
+                        if r_id and r_id.startswith("HOA_"):
+                            s = r_id[4:]
+                            if s.isdigit():
+                                max_num = max(max_num, int(s))
+                    actual_request_id = f"HOA_{max_num + 1:02d}"
+                    print(f"[Backend] Request ID '{assigned_request_id}' was already taken; auto-assigned '{actual_request_id}'")
+
             # ---- CREATE DB RECORD (INITIAL) ----
             new_invoice = Invoice(
-                request_id=assigned_request_id,
+                request_id=actual_request_id,
                 filename=new_name,
                 original_filename=clean_name,
                 file_path=file_path,
@@ -664,13 +713,20 @@ async def upload_invoices(
 
             # Populate HOA & payment columns
             new_invoice.vendor_code = new_invoice.vendor_id
-            new_invoice.payment_terms = invoice_details.get("payment_terms", {}).get("value") or invoice_details.get("payment_term", {}).get("value")
-            new_invoice.payment_method = invoice_details.get("payment_method", {}).get("value")
-            new_invoice.payment_reference = invoice_details.get("payment_reference", {}).get("value")
-            new_invoice.expense_type = invoice_details.get("expense_type", {}).get("value")
-            new_invoice.expense_category = invoice_details.get("expense_category", {}).get("value")
-            new_invoice.loan_number = invoice_details.get("loan_number", {}).get("value")
-            new_invoice.any_fee_applicable = invoice_details.get("any_fee_applicable", {}).get("value")
+            pt_val = invoice_details.get("payment_terms", {}).get("value") or invoice_details.get("payment_term", {}).get("value")
+            new_invoice.payment_terms = str(pt_val)[:100] if pt_val else None
+            pm_val = invoice_details.get("payment_method", {}).get("value")
+            new_invoice.payment_method = str(pm_val)[:50] if pm_val else None
+            pr_val = invoice_details.get("payment_reference", {}).get("value")
+            new_invoice.payment_reference = str(pr_val)[:255] if pr_val else None
+            et_val = invoice_details.get("expense_type", {}).get("value")
+            new_invoice.expense_type = str(et_val)[:100] if et_val else None
+            ec_val = invoice_details.get("expense_category", {}).get("value")
+            new_invoice.expense_category = str(ec_val)[:100] if ec_val else None
+            ln_val = invoice_details.get("loan_number", {}).get("value")
+            new_invoice.loan_number = str(ln_val)[:100] if ln_val else None
+            afa_val = invoice_details.get("any_fee_applicable", {}).get("value")
+            new_invoice.any_fee_applicable = str(afa_val)[:100] if afa_val else None
             fee_val = amounts.get("fee_amount", {}).get("value")
             if fee_val is not None:
                 new_invoice.fee_amount = remove_currency_format(fee_val)
@@ -1442,7 +1498,7 @@ async def get_invoices(
             )
         )
 
-    search_fields = ["request_id", "invoice_number", "vendor_name", "vendor_id", "status", "filename"]
+    search_fields = ["request_id", "invoice_number", "vendor_name", "vendor_id", "status", "filename", "loan_number"]
     
     paginated_res = invoice_repo.get_paginated(
         db,

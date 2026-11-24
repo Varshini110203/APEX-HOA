@@ -37,6 +37,9 @@ export const uploadInvoices = (formData, taskId, onUploadProgress, signal) => {
 export const cancelUpload = (taskId) =>
     API.post(`/invoices/cancel-upload/${taskId}`).then(res => res.data);
 
+export const getNextRequestId = () =>
+    API.get("/invoices/next-request-id").then(res => res.data);
+
 export const deleteInvoice = (invoiceId) =>
     API.delete(`/invoices/${invoiceId}`).then(res => {
         return res.data;

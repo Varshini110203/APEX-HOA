@@ -116,6 +116,7 @@ const DashboardPage = React.memo(() => {
         { header: "Vendor Name", accessor: (row) => row?.extracted_data?.vendor_info?.name?.value || "-" },
         { header: "Vendor ID", accessor: "vendor_id" },
         { header: "Invoice Number", accessor: "invoice_number" },
+        { header: "Loan Number", accessor: (row) => row.loan_number || row?.extracted_data?.invoice_details?.loan_number?.value || "-" },
         { header: "Total Amount", accessor: (row) => formatCurrency(row?.extracted_data?.amounts?.total_invoice_amount?.value) },
         { header: "Amount Due", accessor: (row) => formatCurrency(row?.extracted_data?.amounts?.amount_due?.value) },
         { header: "Uploaded By", accessor: "uploaded_by" },
@@ -150,6 +151,12 @@ const DashboardPage = React.memo(() => {
             header: "Invoice Number",
             accessor: "invoice_number",
             sortable: true,
+        },
+        {
+            header: "Loan Number",
+            accessor: "loan_number",
+            sortable: true,
+            render: (val, row) => val || row?.extracted_data?.invoice_details?.loan_number?.value || "-",
         },
         {
             header: "Total Amount",
@@ -250,7 +257,7 @@ const DashboardPage = React.memo(() => {
                         <SearchOutlined className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
-                            placeholder="Search invoices..."
+                            placeholder="Search invoices, loan number..."
                             value={localSearch}
                             onChange={(e) => setLocalSearch(e.target.value)}
                             className="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-[#24A1DD] focus:bg-white transition-colors"

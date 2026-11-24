@@ -210,6 +210,14 @@ export const getCondensedColumns = (onView, onDelete, onArchive, userRole, openi
         filterable: true,
     },
     {
+        header: "Loan Number",
+        accessor: "loan_number",
+        sortable: true,
+        filterable: true,
+        getFilterValue: (row) => row?.loan_number ?? row?.extracted_data?.invoice_details?.loan_number?.value ?? "",
+        render: (val, row) => val || row?.extracted_data?.invoice_details?.loan_number?.value || "-",
+    },
+    {
         header: "Total Amount",
         accessor: "total_amount",
         filterable: true,
@@ -370,6 +378,14 @@ export const getFullColumns = (onView, onDelete, onArchive, userRole, openingInv
         accessor: "invoice_number",
         sortable: true,
         filterable: true,
+    },
+    {
+        header: "Loan Number",
+        accessor: "loan_number",
+        sortable: true,
+        filterable: true,
+        getFilterValue: (row) => row?.loan_number ?? row?.extracted_data?.invoice_details?.loan_number?.value ?? "",
+        render: (val, row) => val || row?.extracted_data?.invoice_details?.loan_number?.value || "-",
     },
     {
         header: "Invoice Date",

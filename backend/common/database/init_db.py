@@ -69,6 +69,29 @@ def _add_column_if_not_exists(conn, table_name: str, column_name: str, column_de
         print(f"SUCCESS: Added column '{column_name}' ({column_def}) to table '{table_name}'")
 
 
+def _ensure_request_id_unique_index(conn):
+    """Ensure invoices.request_id has a unique filtered index."""
+    try:
+        res = conn.execute(text("""
+            SELECT COUNT(*)
+            FROM sys.indexes i
+            JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+            JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+            WHERE i.object_id = OBJECT_ID('invoices') 
+              AND c.name = 'request_id' 
+              AND i.is_unique = 1
+        """)).scalar()
+        if res == 0:
+            conn.execute(text("""
+                CREATE UNIQUE NONCLUSTERED INDEX uq_invoices_request_id 
+                ON invoices(request_id) 
+                WHERE request_id IS NOT NULL
+            """))
+            print("SUCCESS: Created unique filtered index 'uq_invoices_request_id' on invoices(request_id)")
+    except Exception as e:
+        print(f"Warning ensuring unique index on invoices.request_id: {e}")
+
+
 def _widen_status_column_if_needed(conn):
     """Ensure invoices.status is at least VARCHAR(50) so new longer status values don't get truncated."""
     try:
@@ -139,16 +162,18 @@ def create_tables(engine_obj, base_obj):
             _add_column_if_not_exists(conn, "customer_master", "billing_city", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "attachments", "NVARCHAR(MAX) NULL")
             _add_column_if_not_exists(conn, "invoices", "request_id", "NVARCHAR(50) NULL")
+            _add_column_if_not_exists(conn, "deleted_invoices", "request_id", "NVARCHAR(50) NULL")
             _add_column_if_not_exists(conn, "invoices", "vendor_code", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "payment_terms", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "payment_method", "NVARCHAR(50) NULL")
-            _add_column_if_not_exists(conn, "invoices", "any_fee_applicable", "NVARCHAR(10) NULL")
+            _add_column_if_not_exists(conn, "invoices", "any_fee_applicable", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "fee_amount", "DECIMAL(18, 2) NULL")
             _add_column_if_not_exists(conn, "invoices", "expense_type", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "payment_reference", "NVARCHAR(255) NULL")
             _add_column_if_not_exists(conn, "invoices", "expense_category", "NVARCHAR(100) NULL")
             _add_column_if_not_exists(conn, "invoices", "loan_number", "NVARCHAR(100) NULL")
             _widen_status_column_if_needed(conn)
+            _ensure_request_id_unique_index(conn)
 
             # Explicitly commit the changes
             conn.commit()
