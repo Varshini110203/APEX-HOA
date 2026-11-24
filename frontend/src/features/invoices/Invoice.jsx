@@ -470,7 +470,7 @@ const Invoice = () => {
                                 { key: "posted_stage", label: `Posted To ${getERPSystem()} Invoices` },
                                 { key: "processed_payment", label: "Processed Payment Invoices" },
                                 { key: "paid_payment", label: "Paid Payment Invoices" },
-                                { key: "request_closed", label: "Request Closed Invoices" },
+                                { key: "request_closed", label: "Closed Request Invoices" },
                                 { key: "delete", label: "Deleted Invoices" },
                                 { key: "archive", label: "Archived Invoices" },
                             ].map(({ key, label }, index, arr) => {
