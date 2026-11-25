@@ -209,7 +209,7 @@ const WorkflowTab = () => {
 
     const processedActor = initialProcessedStep?.user || activeInvoiceData?.uploaded_by || "System";
     const step1 = {
-        title: "HOA User",
+        title: "HOA User (Uploaded)",
         status: "completed",
         subtitle: getUserDisplayName(processedActor),
         time: formatStepTime(initialProcessedStep?.timestamp || activeInvoiceData?.uploaded_at || activeInvoiceData?.processed_at),
