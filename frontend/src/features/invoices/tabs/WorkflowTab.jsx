@@ -260,27 +260,27 @@ const WorkflowTab = () => {
     const hoaSubmitSteps = historySteps.filter(isHoaSubmitStep);
 
     // Helpers to guard actor identities
-    const isApproverName = (name) => {
+    const isApproverPlaceholder = (name) => {
         if (!name) return true;
         const n = String(name).toLowerCase().trim();
-        return n.includes("janani") || n.includes("pricilla") || n.includes("jagadhish") || n.includes("approv") || n.includes("system") || n.includes("admin") || n === "hoa user" || n === "ap user" || n === "waiting" || n === "-" || n === "in queue";
+        return n.includes("approv") || n.includes("system") || n.includes("admin") || n === "hoa user" || n === "ap user" || n === "waiting" || n === "-" || n === "in queue";
     };
 
     const getHoaUserDisplayName = (name) => {
-        if (name && !isApproverName(name)) {
+        if (name && !isApproverPlaceholder(name)) {
             const dn = getUserDisplayName(name);
-            if (dn && !isApproverName(dn)) return dn;
+            if (dn && !isApproverPlaceholder(dn)) return dn;
         }
-        return "Lokesh";
+        return "HOA User";
     };
 
     // Identify primary HOA user name from history, audit logs, or invoice uploader
     const rawDefaultHoaUser = 
-        hoaSubmitSteps.slice().reverse().find(s => s.user && !isApproverName(s.user))?.user || 
-        auditHoaSubmitLogs.slice().reverse().find(a => a.user && !isApproverName(a.user))?.user ||
-        (initialProcessedStep?.user && !isApproverName(initialProcessedStep.user) ? initialProcessedStep.user : null) || 
-        (activeInvoiceData?.uploaded_by && !isApproverName(activeInvoiceData.uploaded_by) ? activeInvoiceData.uploaded_by : null) || 
-        "Lokesh";
+        hoaSubmitSteps.slice().reverse().find(s => s.user && !isApproverPlaceholder(s.user))?.user || 
+        auditHoaSubmitLogs.slice().reverse().find(a => a.user && !isApproverPlaceholder(a.user))?.user ||
+        (initialProcessedStep?.user && !isApproverPlaceholder(initialProcessedStep.user) ? initialProcessedStep.user : null) || 
+        (activeInvoiceData?.uploaded_by && !isApproverPlaceholder(activeInvoiceData.uploaded_by) ? activeInvoiceData.uploaded_by : null) || 
+        "HOA User";
     const defaultHoaUser = getHoaUserDisplayName(rawDefaultHoaUser);
 
     // ── Build HOA Steps (including rework cycles) ──
@@ -302,8 +302,8 @@ const WorkflowTab = () => {
             return t <= reworkTime && (lastHoaStepTime === 0 || t >= lastHoaStepTime);
         }).pop();
 
-        const hoaActorRaw = (userSubmit?.user && !isApproverName(userSubmit.user) ? userSubmit.user : null) ||
-                            (cycleAudit?.user && !isApproverName(cycleAudit.user) ? cycleAudit.user : null) ||
+        const hoaActorRaw = (userSubmit?.user && !isApproverPlaceholder(userSubmit.user) ? userSubmit.user : null) ||
+                            (cycleAudit?.user && !isApproverPlaceholder(cycleAudit.user) ? cycleAudit.user : null) ||
                             defaultHoaUser;
         const hoaActor = getHoaUserDisplayName(hoaActorRaw);
         const hoaTime = userSubmit?.timestamp || cycleAudit?.timestamp || (idx > 0 && hoaReworkSteps[idx - 1] ? hoaReworkSteps[idx - 1].timestamp : (initialProcessedStep?.timestamp || activeInvoiceData?.uploaded_at || activeInvoiceData?.processed_at));
@@ -321,7 +321,7 @@ const WorkflowTab = () => {
         hoaSteps.push({
             title: "HOA Approver",
             status: "reworked",
-            subtitle: reworkStep.user ? `${getUserDisplayName(reworkStep.user)} (Sent for Rework)` : "Janani (Sent for Rework)",
+            subtitle: reworkStep.user ? `${getUserDisplayName(reworkStep.user)} (Sent for Rework)` : "HOA Approver (Sent for Rework)",
             time: formatStepTime(reworkStep.timestamp),
             comment: reworkStep.comment
         });
@@ -374,8 +374,8 @@ const WorkflowTab = () => {
         });
     } else {
         // HOA User has submitted in this cycle (invoice is at waiting_hoa_approval, waiting_coding, approved, etc.)
-        const hoaActorRaw = (latestHoaSubmit?.user && !isApproverName(latestHoaSubmit.user) ? latestHoaSubmit.user : null) ||
-                            (currentAuditHoa?.user && !isApproverName(currentAuditHoa.user) ? currentAuditHoa.user : null) ||
+        const hoaActorRaw = (latestHoaSubmit?.user && !isApproverPlaceholder(latestHoaSubmit.user) ? latestHoaSubmit.user : null) ||
+                            (currentAuditHoa?.user && !isApproverPlaceholder(currentAuditHoa.user) ? currentAuditHoa.user : null) ||
                             defaultHoaUser;
         const hoaActor = getHoaUserDisplayName(hoaActorRaw);
         const hoaTime = latestHoaSubmit?.timestamp || currentAuditHoa?.timestamp || activeInvoiceData?.updated_at || activeInvoiceData?.uploaded_at;
@@ -401,7 +401,7 @@ const WorkflowTab = () => {
             hoaSteps.push({
                 title: "HOA Approver",
                 status: "rejected",
-                subtitle: getUserDisplayName(hoaRejectStep.user || "Janani"),
+                subtitle: getUserDisplayName(hoaRejectStep.user || "HOA Approver"),
                 time: formatStepTime(hoaRejectStep.timestamp),
                 comment: hoaRejectStep.comment
             });
@@ -409,7 +409,7 @@ const WorkflowTab = () => {
             hoaSteps.push({
                 title: "HOA Approver",
                 status: "completed",
-                subtitle: getUserDisplayName(hoaApproveStep.user || "Janani"),
+                subtitle: getUserDisplayName(hoaApproveStep.user || "HOA Approver"),
                 time: formatStepTime(hoaApproveStep.timestamp),
                 comment: hoaApproveStep.comment
             });
@@ -489,28 +489,28 @@ const WorkflowTab = () => {
             return !name.includes("hoa") && !comment.includes("hoa");
         });
 
-        // Filter out true approvers and generic placeholders from AP User identification
-        const isApproverNameForAp = (name) => {
+        // Filter out approvers and generic placeholders from AP User identification
+        const isApproverPlaceholderForAp = (name) => {
             if (!name) return true;
             const n = String(name).toLowerCase().trim();
-            if (n.includes("janani") || n.includes("pricilla") || n.includes("jagadhish") || n.includes("approv")) return true;
+            if (n.includes("approv")) return true;
             if (n.includes("system") || n.includes("admin") || n.includes("ap coder") || n.includes("ap user") || n.includes("waiting") || n === "-" || n === "in queue") return true;
             return false;
         };
 
         const getApUserDisplayName = (name) => {
-            if (name && !isApproverNameForAp(name)) {
+            if (name && !isApproverPlaceholderForAp(name)) {
                 const dn = getUserDisplayName(name);
-                if (dn && !isApproverNameForAp(dn)) return dn;
+                if (dn && !isApproverPlaceholderForAp(dn)) return dn;
             }
-            return "Varshini";
+            return "AP User";
         };
 
         // Identify primary AP user from actual coding steps or audit logs
         const rawFoundCoder = 
-            apCodingSteps.slice().reverse().find(s => s.user && !isApproverNameForAp(s.user))?.user ||
-            auditApSubmitLogs.slice().reverse().find(a => a.user && !isApproverNameForAp(a.user))?.user ||
-            "Varshini";
+            apCodingSteps.slice().reverse().find(s => s.user && !isApproverPlaceholderForAp(s.user))?.user ||
+            auditApSubmitLogs.slice().reverse().find(a => a.user && !isApproverPlaceholderForAp(a.user))?.user ||
+            "AP User";
 
         const defaultApUser = getApUserDisplayName(rawFoundCoder);
 
@@ -530,8 +530,8 @@ const WorkflowTab = () => {
                 return t <= rwTime && (lastApStepTime === 0 || t >= lastApStepTime);
             }).pop();
 
-            const apUserRaw = (coderStep?.user && !isApproverNameForAp(coderStep.user) ? coderStep.user : null) ||
-                              (cycleAudit?.user && !isApproverNameForAp(cycleAudit.user) ? cycleAudit.user : null) ||
+            const apUserRaw = (coderStep?.user && !isApproverPlaceholderForAp(coderStep.user) ? coderStep.user : null) ||
+                              (cycleAudit?.user && !isApproverPlaceholderForAp(cycleAudit.user) ? cycleAudit.user : null) ||
                               defaultApUser;
             const apActor = getApUserDisplayName(apUserRaw);
             const apTime = coderStep?.timestamp || cycleAudit?.timestamp || (idx > 0 && apReworkSteps[idx - 1] ? apReworkSteps[idx - 1].timestamp : (lastApStepTime !== 0 && lastApStepTime !== Infinity ? lastApStepTime : apRw.timestamp));
@@ -547,7 +547,7 @@ const WorkflowTab = () => {
             apSteps.push({
                 title: "AP Approver",
                 status: "reworked",
-                subtitle: apRw.user ? `${getUserDisplayName(apRw.user)} (Sent for Rework)` : "Jagadhish (Sent for Rework)",
+                subtitle: apRw.user ? `${getUserDisplayName(apRw.user)} (Sent for Rework)` : "AP Approver (Sent for Rework)",
                 time: formatStepTime(apRw.timestamp),
                 comment: apRw.comment
             });
@@ -600,8 +600,8 @@ const WorkflowTab = () => {
             });
         } else {
             // AP User has coded and submitted to AP Approver (invoice is at waiting_ap_approval, waiting_approval, approved, etc.)
-            const apUserRaw = (latestApCode?.user && !isApproverNameForAp(latestApCode.user) ? latestApCode.user : null) ||
-                              (latestApAudit?.user && !isApproverNameForAp(latestApAudit.user) ? latestApAudit.user : null) ||
+            const apUserRaw = (latestApCode?.user && !isApproverPlaceholderForAp(latestApCode.user) ? latestApCode.user : null) ||
+                              (latestApAudit?.user && !isApproverPlaceholderForAp(latestApAudit.user) ? latestApAudit.user : null) ||
                               defaultApUser;
             const apActor = getApUserDisplayName(apUserRaw);
             const apTime = latestApCode?.timestamp || latestApAudit?.timestamp || activeInvoiceData?.updated_at;
@@ -627,7 +627,7 @@ const WorkflowTab = () => {
                 apSteps.push({
                     title: "AP Approver",
                     status: "rejected",
-                    subtitle: getUserDisplayName(apRejectStep.user || "Jagadhish"),
+                    subtitle: getUserDisplayName(apRejectStep.user || "AP Approver"),
                     time: formatStepTime(apRejectStep.timestamp),
                     comment: apRejectStep.comment
                 });
@@ -726,7 +726,7 @@ const WorkflowTab = () => {
 
                 const repostSubtitle = repostCount > 0
                     ? `${getUserDisplayName(apApproveStep?.user || "AP Approver")} (Approved & Posted to Sage after ${repostCount} repost${repostCount > 1 ? 's' : ''})`
-                    : getUserDisplayName(apApproveStep?.user || (["sage_posted", "processed_payment", "paid", "paid_payment", "request_closed"].includes(currentStatus) ? "Approved & Posted to Sage" : "Jagadhish"));
+                    : getUserDisplayName(apApproveStep?.user || (["sage_posted", "processed_payment", "paid", "paid_payment", "request_closed"].includes(currentStatus) ? "Approved & Posted to Sage" : "AP Approver"));
 
                 apSteps.push({
                     title: repostCount > 0 ? `AP Approver - Reposted (Attempt ${repostCount})` : "AP Approver",

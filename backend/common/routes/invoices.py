@@ -3975,9 +3975,7 @@ async def update_invoice(
         raw_st = update_data["status"]
         new_st = (raw_st.value if hasattr(raw_st, "value") else str(raw_st)).lower().replace("invoicestatusenum.", "").replace("invoicestatus.", "")
         if new_st == "waiting_hoa_approval":
-            hoa_user = current_user.username or current_user.email
-            if not hoa_user or hoa_user.lower() in ("admin", "system", "hoa user"):
-                hoa_user = "Lokesh"
+            hoa_user = current_user.username or current_user.email or "HOA User"
             db.add(WorkflowStep(
                 invoice_id=invoice_id,
                 step_name="HOA User Submitted",
@@ -3997,9 +3995,7 @@ async def update_invoice(
                 submitted_by=hoa_user
             )
         elif new_st in ("waiting_ap_approval", "waiting_approval"):
-            ap_user = current_user.username or current_user.email
-            if not ap_user or ap_user.lower() in ("admin", "system", "ap user", "ap coder"):
-                ap_user = "Varshini"
+            ap_user = current_user.username or current_user.email or "AP User"
             last_step = db.query(WorkflowStep).filter(
                 WorkflowStep.invoice_id == invoice_id
             ).order_by(WorkflowStep.timestamp.desc()).first()
