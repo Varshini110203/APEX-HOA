@@ -40,9 +40,17 @@ export const exportToExcel = (data, columns, fileName = "export.xlsx") => {
                 value = getFilterValue(row) || "";
             } else if (typeof accessor === 'function') {
                 try {
-                    value = accessor({ data: row }) || "";
-                } catch (e) {
-                    value = row[col.field] || "";
+                    // Try accessor(row) first (standard for custom export columns)
+                    const res = accessor(row);
+                    value = (res !== undefined && res !== null) ? res : "";
+                } catch (e1) {
+                    try {
+                        // Fallback for ag-grid style accessor({ data: row })
+                        const res = accessor({ data: row });
+                        value = (res !== undefined && res !== null) ? res : "";
+                    } catch (e2) {
+                        value = col.field ? row[col.field] : "";
+                    }
                 }
             } else if (typeof accessor === 'string') {
                 value = getNestedValue(row, accessor);
